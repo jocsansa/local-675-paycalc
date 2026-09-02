@@ -94,13 +94,13 @@ export interface RateSource {
   rate_table_id: string;
   rate_table_version: string;
   effective_date: string;
-  agreement?: string | null;
+  agreement?: string | null | undefined;
   category: string;
   item_code: string;
   item_name: string;
-  material?: string | null;
-  thickness?: string | null;
-  height_category?: string | null;
+  material?: string | null | undefined;
+  thickness?: string | null | undefined;
+  height_category?: string | null | undefined;
   unit: string;
   rate: number | null;
   calculation_type: string;
@@ -109,7 +109,7 @@ export interface RateSource {
 export interface CalcLine {
   section: "boarding" | "extras" | "premiums";
   label: string;
-  detail?: string;
+  detail?: string | undefined;
   quantity: number;
   unit: string;
   rate: number | null;
