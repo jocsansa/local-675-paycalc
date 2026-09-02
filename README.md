@@ -107,6 +107,65 @@ Testar: Low Rise, High Rise, Commercial, diferentes materiais, diferentes altura
 
 Construir uma APLICAÇÃO COMPLETAMENTE FUNCIONAL, não um protótipo estático. Começar com: database architecture → rate engine → job model → calculator → rate manager → dashboard → report → mobile optimization → testes completos.
 
+---
+
+## STATUS DO MVP
+
+### Implementado
+
+| Área | Onde |
+| --- | --- |
+| Schema Supabase (13 tabelas, RLS, roles) | `supabase/migrations/` |
+| Rate engine puro + 26 testes | `src/lib/rate-engine.ts`, `src/lib/rate-engine.test.ts` |
+| Camada de dados / CRUD | `src/lib/db.ts`, `src/lib/queries.ts` |
+| Auth (sign in / sign up, guarda de rota, roles) | `src/lib/auth.tsx`, `src/routes/login.tsx` |
+| Dashboard (mês, total, média, recentes) | `src/routes/index.tsx` |
+| Fluxo de job em 5 passos + total fixo no rodapé | `src/routes/jobs/new.tsx` |
+| Lista de jobs com busca, duplicar, excluir | `src/routes/jobs/index.tsx` |
+| Relatório imprimível + "Why?" + disclaimer | `src/routes/jobs/$id.tsx` |
+| Rate Manager (agreements, tabelas versionadas, CSV) | `src/routes/rates.tsx`, `src/lib/csv.ts` |
+| Quick Calculator mobile | `src/routes/quick.tsx` |
+
+### Fora do MVP (próximas fatias)
+
+- Persistência offline / PWA e sincronização
+- `rate_rules` com auto-aplicação condicional de premiums
+- Tabela `reports` persistida (o relatório hoje é gerado a partir de `calculation_results`)
+- Tela de gestão de usuários e roles (o schema já suporta; a UI ainda não)
+- Editor visual de faixas (`rate_tiers`) — hoje via `included_qty` ou inserção direta
+
+### Configurando as taxas
+
+O app **nunca inventa uma taxa**. Antes do primeiro cálculo:
+
+1. **Rates → novo Agreement** (ex.: "Local 675 Drywall Agreement").
+2. **Novo Rate Table** com a versão e a data de vigência do acordo.
+3. **CSV template** → baixa a planilha com todas as linhas e a coluna `rate` **vazia**.
+4. Preencher as taxas a partir do acordo coletivo e **importar**.
+
+Linhas com `rate` vazia ou não numérica são recusadas na importação e reportadas.
+Qualquer combinação sem taxa configurada aparece como `RATE NOT CONFIGURED` e soma $0 —
+nunca um valor estimado.
+
+### Comandos
+
+O lockfile do projeto é o `bun.lock` — instale com **bun** para que a trava de
+supply-chain do `bunfig.toml` (`minimumReleaseAge`) seja aplicada. Lockfiles de
+outros gerenciadores estão no `.gitignore` para não divergirem.
+
+```sh
+bun install        # ou: npx bun install
+```
+
+```sh
+bun run dev        # dev server (porta 8080)
+bun run test       # testes do rate engine
+bun run typecheck  # tsc --noEmit
+bun run build      # build de produção
+```
+
+---
+
 This project was built with [Lovable](https://lovable.dev).
 
 ## Build with Lovable

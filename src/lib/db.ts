@@ -226,7 +226,16 @@ export async function fetchJobResult(jobId: string) {
     .limit(1);
   if (error) throw error;
   const row = (data ?? [])[0] as unknown as
-    | { breakdown: unknown; metrics: unknown; grand_total: number; created_at: string }
+    | {
+        breakdown: unknown;
+        metrics: unknown;
+        base_total: number;
+        extras_total: number;
+        premiums_total: number;
+        grand_total: number;
+        effective_date: string | null;
+        created_at: string;
+      }
     | undefined;
   return row ?? null;
 }
@@ -353,5 +362,141 @@ export async function saveJob(
 
 export async function deleteJob(jobId: string) {
   const { error } = await supabase.from("jobs").delete().eq("id", jobId);
+  if (error) throw error;
+}
+
+/* ------------------------------------------------------- rate administration */
+
+export async function createAgreement(input: {
+  name: string;
+  local_union: string;
+  jurisdiction: string;
+  notes: string;
+}): Promise<string> {
+  const { data, error } = await supabase
+    .from("agreements")
+    .insert({
+      name: input.name,
+      local_union: input.local_union || null,
+      jurisdiction: input.jurisdiction || null,
+      notes: input.notes || null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return (data as unknown as { id: string }).id;
+}
+
+export async function setAgreementActive(id: string, active: boolean) {
+  const { error } = await supabase.from("agreements").update({ active }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function createRateTable(input: {
+  agreement_id: string;
+  version: string;
+  effective_from: string;
+  effective_to: string | null;
+  notes: string;
+}): Promise<string> {
+  const { data, error } = await supabase
+    .from("rate_tables")
+    .insert({
+      agreement_id: input.agreement_id,
+      version: input.version,
+      effective_from: input.effective_from,
+      effective_to: input.effective_to,
+      notes: input.notes || null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return (data as unknown as { id: string }).id;
+}
+
+export async function setRateTableActive(id: string, active: boolean) {
+  const { error } = await supabase.from("rate_tables").update({ active }).eq("id", id);
+  if (error) throw error;
+}
+
+export type RateItemDraft = Omit<RateItem, "id"> & { id?: string };
+
+/**
+ * Historical rates are never destroyed: an edit to a saved rate deactivates the
+ * old row and inserts a replacement, so past calculations stay reproducible.
+ */
+export async function saveRateItem(draft: RateItemDraft): Promise<void> {
+  const payload = {
+    rate_table_id: draft.rate_table_id,
+    project_type: draft.project_type,
+    category: draft.category,
+    item_code: draft.item_code,
+    item_name: draft.item_name,
+    material: draft.material ?? null,
+    thickness: draft.thickness ?? null,
+    height_category: draft.height_category ?? null,
+    unit: draft.unit,
+    rate: draft.rate,
+    calculation_type: draft.calculation_type,
+    included_qty: draft.included_qty ?? 0,
+    active: draft.active ?? true,
+    notes: draft.notes ?? null,
+  };
+
+  if (draft.id) {
+    const { error: deErr } = await supabase
+      .from("rate_items")
+      .update({ active: false })
+      .eq("id", draft.id);
+    if (deErr) throw deErr;
+  }
+  const { error } = await supabase.from("rate_items").insert(payload);
+  if (error) throw error;
+}
+
+export async function setRateItemActive(id: string, active: boolean) {
+  const { error } = await supabase.from("rate_items").update({ active }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function insertRateItems(rows: Omit<RateItem, "id">[]): Promise<number> {
+  if (!rows.length) return 0;
+  const { error } = await supabase.from("rate_items").insert(
+    rows.map((r) => ({
+      rate_table_id: r.rate_table_id,
+      project_type: r.project_type,
+      category: r.category,
+      item_code: r.item_code,
+      item_name: r.item_name,
+      material: r.material ?? null,
+      thickness: r.thickness ?? null,
+      height_category: r.height_category ?? null,
+      unit: r.unit,
+      rate: r.rate,
+      calculation_type: r.calculation_type,
+      included_qty: r.included_qty ?? 0,
+      active: r.active ?? true,
+      notes: r.notes ?? null,
+    })),
+  );
+  if (error) throw error;
+  return rows.length;
+}
+
+export async function replaceTiers(rateItemId: string, tiers: Omit<RateTier, "id">[]) {
+  const { error: delErr } = await supabase
+    .from("rate_tiers")
+    .delete()
+    .eq("rate_item_id", rateItemId);
+  if (delErr) throw delErr;
+  if (!tiers.length) return;
+  const { error } = await supabase.from("rate_tiers").insert(
+    tiers.map((t) => ({
+      rate_item_id: rateItemId,
+      min_qty: t.min_qty,
+      max_qty: t.max_qty,
+      rate: t.rate,
+    })),
+  );
   if (error) throw error;
 }

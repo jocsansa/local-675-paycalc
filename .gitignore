@@ -10,6 +10,12 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+
+# bun.lock is the project lockfile (see bunfig.toml). Ignore lockfiles from
+# other package managers so the two can never drift apart.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 .output
 .vinxi
 .tanstack/**
