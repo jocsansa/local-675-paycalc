@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, FileUp, Plus, Upload } from "lucide-react";
+import { Download, FileUp, Loader2, Plus, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +33,7 @@ import {
   createRateTable,
   insertRateItems,
   saveRateItem,
+  seedLocal675,
   setRateItemActive,
   setRateTableActive,
   type RateItemDraft,
@@ -85,6 +86,7 @@ function RateManager() {
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [showInactive, setShowInactive] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const activeAgreementId = agreementId ?? agreements.data?.[0]?.id ?? null;
@@ -269,6 +271,47 @@ function RateManager() {
           </div>
         ) : null}
       </section>
+
+      {(agreements.data ?? []).length === 0 ? (
+        <section className="panel space-y-3 p-5">
+          <h2 className="font-display text-sm font-semibold tracking-widest uppercase">
+            Start from the published Local 675 schedule
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Loads the ISCA / Local 675 residential piecework rates for 2025–2028 as three rate
+            tables, one per contract year, so each job is priced with the rates in force on its
+            date. Boarding is priced per 1000 sq ft by ceiling height, exactly as the agreement
+            states it.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Transcribed from Article 6 of the agreement effective May 1, 2025 – April 30, 2028.
+            Check it against your own copy before using a total for payment.
+          </p>
+          <Button
+            disabled={!isAdmin || seeding}
+            onClick={async () => {
+              setSeeding(true);
+              try {
+                const { tables, rates } = await seedLocal675();
+                await queryClient.invalidateQueries({ queryKey: ["agreements"] });
+                await queryClient.invalidateQueries({ queryKey: ["rate_tables"] });
+                toast.success(`Loaded ${rates} rates across ${tables} contract years.`);
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Could not load the schedule.");
+              } finally {
+                setSeeding(false);
+              }
+            }}
+          >
+            {seeding ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            Load Local 675 2025–2028
+          </Button>
+        </section>
+      ) : null}
 
       {!activeTableId ? (
         <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { LOCAL_675_AGREEMENT, LOCAL_675_RATES, LOCAL_675_YEARS } from "@/data/local675-2025-2028";
 import type {
   BoardingInput,
   ExtraInput,
@@ -156,9 +157,11 @@ export async function fetchJobs(): Promise<(JobRecord & { grand_total: number | 
     .select("*, calculation_results(grand_total, created_at)")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as unknown as (JobRecord & {
-    calculation_results: { grand_total: number; created_at: string }[];
-  })[]).map((j) => {
+  return (
+    (data ?? []) as unknown as (JobRecord & {
+      calculation_results: { grand_total: number; created_at: string }[];
+    })[]
+  ).map((j) => {
     const latest = [...(j.calculation_results ?? [])].sort((a, b) =>
       a.created_at < b.created_at ? 1 : -1,
     )[0];
@@ -192,27 +195,27 @@ export async function fetchJobDraft(jobId: string): Promise<JobDraft> {
       ceiling_height: a.ceiling_height === null ? null : Number(a.ceiling_height),
     })),
     boarding: ((boarding.data ?? []) as unknown as Record<string, unknown>[]).map((b) => ({
-      id: String(b['id']),
-      area_id: (b['area_id'] as string | null) ?? null,
-      location: (b['location'] as string | null) ?? "",
-      material: String(b['material']),
-      thickness: (b['thickness'] as string | null) ?? null,
-      height_category: (b['height_category'] as string | null) ?? null,
-      sheet_width: Number(b['sheet_width']),
-      sheet_height: Number(b['sheet_height']),
-      quantity: Number(b['quantity']),
-      entry_mode: (b['entry_mode'] as "sheets" | "sqft") ?? "sheets",
+      id: String(b["id"]),
+      area_id: (b["area_id"] as string | null) ?? null,
+      location: (b["location"] as string | null) ?? "",
+      material: String(b["material"]),
+      thickness: (b["thickness"] as string | null) ?? null,
+      height_category: (b["height_category"] as string | null) ?? null,
+      sheet_width: Number(b["sheet_width"]),
+      sheet_height: Number(b["sheet_height"]),
+      quantity: Number(b["quantity"]),
+      entry_mode: (b["entry_mode"] as "sheets" | "sqft") ?? "sheets",
     })),
     extras: ((extras.data ?? []) as unknown as Record<string, unknown>[]).map((e) => ({
-      id: String(e['id']),
-      area_id: (e['area_id'] as string | null) ?? null,
-      item_code: String(e['item_code']),
-      quantity: Number(e['quantity']),
+      id: String(e["id"]),
+      area_id: (e["area_id"] as string | null) ?? null,
+      item_code: String(e["item_code"]),
+      quantity: Number(e["quantity"]),
     })),
     premiums: ((premiums.data ?? []) as unknown as Record<string, unknown>[]).map((p) => ({
-      id: String(p['id']),
-      item_code: String(p['item_code']),
-      quantity: Number(p['quantity']),
+      id: String(p["id"]),
+      item_code: String(p["item_code"]),
+      quantity: Number(p["quantity"]),
     })),
   };
 }
@@ -240,10 +243,7 @@ export async function fetchJobResult(jobId: string) {
   return row ?? null;
 }
 
-export async function saveJob(
-  draft: JobDraft,
-  result: CalculationResult,
-): Promise<string> {
+export async function saveJob(draft: JobDraft, result: CalculationResult): Promise<string> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
   if (!userId) throw new Error("Not signed in");
@@ -481,6 +481,56 @@ export async function insertRateItems(rows: Omit<RateItem, "id">[]): Promise<num
   );
   if (error) throw error;
   return rows.length;
+}
+
+/**
+ * Loads the published Local 675 / ISCA residential piecework schedule as one
+ * agreement plus one rate table per contract year, so the engine picks the year
+ * in force on each job's date. Safe to run more than once — it creates a new
+ * agreement each time rather than touching anything that already exists.
+ */
+export async function seedLocal675(): Promise<{ tables: number; rates: number }> {
+  const agreementId = await createAgreement({
+    name: LOCAL_675_AGREEMENT.name,
+    local_union: LOCAL_675_AGREEMENT.local_union,
+    jurisdiction: LOCAL_675_AGREEMENT.jurisdiction,
+    notes: LOCAL_675_AGREEMENT.notes,
+  });
+
+  let rates = 0;
+  for (let year = 0; year < LOCAL_675_YEARS.length; year++) {
+    const y = LOCAL_675_YEARS[year];
+    if (!y) continue;
+    const tableId = await createRateTable({
+      agreement_id: agreementId,
+      version: y.version,
+      effective_from: y.effective_from,
+      effective_to: y.effective_to,
+      notes: "Transcribed from the ISCA / Local 675 residential agreement, Article 6.",
+    });
+
+    const rows: Omit<RateItem, "id">[] = LOCAL_675_RATES.map((r) => ({
+      rate_table_id: tableId,
+      project_type: r.project_type,
+      category: r.category,
+      item_code: r.item_code,
+      item_name: r.item_name,
+      material: r.material ?? null,
+      thickness: r.thickness ?? null,
+      height_category: r.height_category ?? null,
+      unit: r.unit,
+      rate: r.rates[year] ?? 0,
+      calculation_type: r.calculation_type,
+      included_qty: r.included_qty ?? 0,
+      active: true,
+      notes: r.notes ?? null,
+    }));
+
+    await insertRateItems(rows);
+    rates += rows.length;
+  }
+
+  return { tables: LOCAL_675_YEARS.length, rates };
 }
 
 export async function replaceTiers(rateItemId: string, tiers: Omit<RateTier, "id">[]) {

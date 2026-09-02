@@ -9,11 +9,13 @@ import {
   calculatePremium,
   calculateTieredRate,
   RATE_NOT_CONFIGURED,
+  round2,
   selectRateTableForDate,
   type EngineContext,
   type RateItem,
   type RateTier,
 } from "./rate-engine";
+import { LOCAL_675_RATES, LOCAL_675_YEARS } from "../data/local675-2025-2028";
 
 /* ------------------------------------------------------------------ fixtures */
 
@@ -278,6 +280,220 @@ describe("job totals", () => {
     const a = calculateJobTotal(job, ctx);
     const b = calculateJobTotal(JSON.parse(JSON.stringify(job)) as typeof job, ctx);
     expect(b.grand_total).toBe(a.grand_total);
+  });
+});
+
+describe("per-1000 pricing", () => {
+  // Local 675 quotes boarding per 1000 square feet, not per square foot.
+  const per1000 = item({
+    category: "boarding",
+    item_code: "BOARD_9_TO_10",
+    item_name: "Boarding — over 9 ft to 10 ft",
+    height_category: "9_to_10",
+    unit: "sq_ft",
+    calculation_type: "per_1000_sq_ft",
+    rate: 422,
+  });
+  const ctx1000: EngineContext = { rateTable: TABLE, items: [per1000], tiers: [] };
+
+  it("divides the quantity by 1000 before applying the rate", () => {
+    const line = calculateBoarding(
+      ctx1000,
+      "low_rise",
+      board({
+        material: "",
+        thickness: null,
+        height_category: "9_to_10",
+        quantity: 1000,
+        entry_mode: "sqft",
+      }),
+    );
+    expect(line.subtotal).toBe(422);
+    expect(line.formula).toContain("÷ 1000");
+  });
+
+  it("scales correctly for a real sheet count", () => {
+    // 100 sheets of 4×8 = 3200 sq ft → 3.2 × $422
+    const line = calculateBoarding(
+      ctx1000,
+      "low_rise",
+      board({ material: "", thickness: null, height_category: "9_to_10" }),
+    );
+    expect(line.subtotal).toBe(1350.4);
+  });
+
+  it("would have been 1000x wrong under flat per-unit pricing", () => {
+    const flat: EngineContext = {
+      ...ctx1000,
+      items: [{ ...per1000, calculation_type: "per_sq_ft" }],
+    };
+    const line = calculateBoarding(
+      flat,
+      "low_rise",
+      board({
+        material: "",
+        thickness: null,
+        height_category: "9_to_10",
+        quantity: 1000,
+        entry_mode: "sqft",
+      }),
+    );
+    expect(line.subtotal).toBe(422000);
+  });
+});
+
+describe("wildcard rate matching", () => {
+  // A row that leaves material and thickness blank prices any board at that height.
+  const byHeightOnly = item({
+    category: "boarding",
+    item_code: "BOARD_8_TO_9",
+    item_name: "Boarding — over 8 ft to 9 ft",
+    material: null,
+    thickness: null,
+    height_category: "8_to_9",
+    calculation_type: "per_1000_sq_ft",
+    rate: 373,
+  });
+
+  it("matches whatever material and thickness the line carries", () => {
+    const c: EngineContext = { rateTable: TABLE, items: [byHeightOnly], tiers: [] };
+    const line = calculateBoarding(
+      c,
+      "low_rise",
+      board({ material: "type_x", thickness: '5/8"', height_category: "8_to_9" }),
+    );
+    expect(line.missing).toBe(false);
+    expect(line.rate).toBe(373);
+  });
+
+  it("still requires the height band to match", () => {
+    const c: EngineContext = { rateTable: TABLE, items: [byHeightOnly], tiers: [] };
+    expect(
+      calculateBoarding(c, "low_rise", board({ material: "", height_category: "11_to_12" }))
+        .missing,
+    ).toBe(true);
+  });
+
+  it("prefers the most specific row when several match", () => {
+    const specific = item({
+      category: "boarding",
+      item_code: "BOARD_8_TO_9_TYPEX",
+      item_name: "Type X exception",
+      material: "type_x",
+      thickness: null,
+      height_category: "8_to_9",
+      calculation_type: "per_1000_sq_ft",
+      rate: 999,
+    });
+    const c: EngineContext = { rateTable: TABLE, items: [byHeightOnly, specific], tiers: [] };
+    const line = calculateBoarding(
+      c,
+      "low_rise",
+      board({ material: "type_x", thickness: null, height_category: "8_to_9" }),
+    );
+    expect(line.rate).toBe(999);
+  });
+});
+
+describe("Local 675 2025–2028 schedule", () => {
+  const yearCtx = (year: 0 | 1 | 2): EngineContext => ({
+    rateTable: { ...TABLE, version: LOCAL_675_YEARS[year]!.version },
+    items: LOCAL_675_RATES.map((r, idx) => ({
+      id: `seed-${idx}`,
+      rate_table_id: TABLE.id,
+      project_type: r.project_type,
+      category: r.category,
+      item_code: r.item_code,
+      item_name: r.item_name,
+      material: r.material ?? null,
+      thickness: r.thickness ?? null,
+      height_category: r.height_category ?? null,
+      unit: r.unit,
+      rate: r.rates[year],
+      calculation_type: r.calculation_type,
+      included_qty: r.included_qty ?? 0,
+      active: true,
+    })),
+    tiers: [],
+  });
+
+  it("carries the ceiling-height ladder the agreement actually uses", () => {
+    const bands = LOCAL_675_RATES.filter(
+      (r) => r.category === "boarding" && r.project_type === "low_rise" && r.height_category,
+    ).map((r) => r.height_category);
+    expect(bands).toEqual(["up_to_8", "8_to_9", "9_to_10", "10_to_11", "11_to_12"]);
+  });
+
+  it("prices low-rise boarding at the published rate for each year", () => {
+    const line = (year: 0 | 1 | 2) =>
+      calculateBoarding(
+        yearCtx(year),
+        "low_rise",
+        board({
+          material: "",
+          thickness: null,
+          height_category: "9_to_10",
+          quantity: 1000,
+          entry_mode: "sqft",
+        }),
+      ).subtotal;
+    expect(line(0)).toBe(422);
+    expect(line(1)).toBe(431);
+    expect(line(2)).toBe(439);
+  });
+
+  it("has no high-rise band at or below 8 ft, as the agreement omits one", () => {
+    const line = calculateBoarding(
+      yearCtx(0),
+      "high_rise",
+      board({ material: "", thickness: null, height_category: "up_to_8" }),
+    );
+    expect(line.missing).toBe(true);
+  });
+
+  it("includes the first five pot lights and charges the rest", () => {
+    const line = calculateExtra(yearCtx(0), "low_rise", {
+      id: "e1",
+      item_code: "POT_LIGHT",
+      quantity: 12,
+    });
+    expect(line.subtotal).toBe(round2(7 * 4.28));
+  });
+
+  it("applies the fire code premium per 1000 sq ft of boarding", () => {
+    const line = calculatePremium(
+      yearCtx(0),
+      "low_rise",
+      { id: "p1", item_code: "FIRE_CODE_C" },
+      { baseTotal: 4220, extrasTotal: 0, totalSqFt: 10000, totalSheets: 312.5 },
+    );
+    expect(line.subtotal).toBe(1050); // 10 × $105
+  });
+
+  it("totals a low-rise job the way the agreement reads", () => {
+    const r = calculateJobTotal(
+      {
+        project_type: "low_rise",
+        boarding: [
+          board({
+            id: "b1",
+            material: "",
+            thickness: null,
+            height_category: "9_to_10",
+            quantity: 10000,
+            entry_mode: "sqft",
+          }),
+        ],
+        extras: [{ id: "e1", item_code: "CORNER_BEAD", quantity: 500 }],
+        premiums: [{ id: "p1", item_code: "TOWNHOUSE" }],
+      },
+      yearCtx(1),
+    );
+    expect(r.base_total).toBe(4310); // 10 × $431
+    expect(r.extras_total).toBe(145); // 500 × $0.29
+    expect(r.premiums_total).toBe(143); // 10 × $14.30
+    expect(r.grand_total).toBe(4598);
+    expect(r.metrics.missing_rates).toBe(0);
   });
 });
 

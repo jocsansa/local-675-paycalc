@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { CalcBreakdown } from "@/components/CalcBreakdown";
@@ -15,14 +15,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRateBundle, useRateTables } from "@/lib/queries";
+import { selectValue } from "@/lib/utils";
 import {
   calculateJobTotal,
   HEIGHT_CATEGORIES,
+  labelFor,
   MATERIALS,
   money,
   PROJECT_TYPES,
   selectRateTableForDate,
-  THICKNESSES,
   type EngineContext,
   type ExtraInput,
 } from "@/lib/rate-engine";
@@ -49,9 +50,9 @@ function QuickCalculator() {
   const bundle = useRateBundle(table?.id ?? null);
 
   const [projectType, setProjectType] = useState("low_rise");
-  const [material, setMaterial] = useState("regular");
-  const [thickness, setThickness] = useState<string>(THICKNESSES[0] ?? '1/2"');
-  const [height, setHeight] = useState("up_to_10");
+  const [material, setMaterial] = useState("");
+  const [thickness, setThickness] = useState("");
+  const [height, setHeight] = useState("");
   const [sheets, setSheets] = useState(0);
   const [sqft, setSqft] = useState(0);
   const [extras, setExtras] = useState<Record<string, number>>({});
@@ -64,6 +65,39 @@ function QuickCalculator() {
     }),
     [bundle.data],
   );
+
+  // Same rule as the job builder: offer only the dimensions this rate table
+  // actually prices boarding on.
+  const boardingOptions = useMemo(() => {
+    const rows = ctx.items.filter(
+      (i) => i.category === "boarding" && i.project_type === projectType && i.active !== false,
+    );
+    const uniq = (values: (string | null | undefined)[]) => [
+      ...new Set(values.filter((v): v is string => Boolean(v))),
+    ];
+    const order = (v: string) => {
+      const i = HEIGHT_CATEGORIES.findIndex((h) => h.value === v);
+      return i === -1 ? HEIGHT_CATEGORIES.length : i;
+    };
+    return {
+      heights: uniq(rows.map((i) => i.height_category)).sort((a, b) => order(a) - order(b)),
+      materials: uniq(rows.map((i) => i.material)),
+      thicknesses: uniq(rows.map((i) => i.thickness)),
+    };
+  }, [ctx.items, projectType]);
+
+  // Keep the selections valid when the project type or rate table changes.
+  useEffect(() => {
+    setHeight((h) =>
+      boardingOptions.heights.includes(h) ? h : (boardingOptions.heights[0] ?? ""),
+    );
+    setMaterial((m) =>
+      boardingOptions.materials.includes(m) ? m : (boardingOptions.materials[0] ?? ""),
+    );
+    setThickness((t) =>
+      boardingOptions.thicknesses.includes(t) ? t : (boardingOptions.thicknesses[0] ?? ""),
+    );
+  }, [boardingOptions]);
 
   const quickExtras = ctx.items
     .filter((i) => i.category === "extra" && i.project_type === projectType && i.active !== false)
@@ -167,50 +201,54 @@ function QuickCalculator() {
 
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="space-y-1">
-            <Label className="text-xs">Material</Label>
-            <Select value={material} onValueChange={setMaterial}>
+            <Label className="text-xs">Ceiling height</Label>
+            <Select {...selectValue(height)} onValueChange={setHeight}>
               <SelectTrigger className="h-12 w-full">
-                <SelectValue />
+                <SelectValue placeholder="No boarding rates" />
               </SelectTrigger>
               <SelectContent>
-                {MATERIALS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
+                {boardingOptions.heights.map((h) => (
+                  <SelectItem key={h} value={h}>
+                    {labelFor(HEIGHT_CATEGORIES, h)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Thickness</Label>
-            <Select value={thickness} onValueChange={setThickness}>
-              <SelectTrigger className="h-12 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {THICKNESSES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Height</Label>
-            <Select value={height} onValueChange={setHeight}>
-              <SelectTrigger className="h-12 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {HEIGHT_CATEGORIES.map((h) => (
-                  <SelectItem key={h.value} value={h.value}>
-                    {h.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {boardingOptions.materials.length > 0 ? (
+            <div className="space-y-1">
+              <Label className="text-xs">Material</Label>
+              <Select {...selectValue(material)} onValueChange={setMaterial}>
+                <SelectTrigger className="h-12 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {boardingOptions.materials.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {labelFor(MATERIALS, m)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          {boardingOptions.thicknesses.length > 0 ? (
+            <div className="space-y-1">
+              <Label className="text-xs">Thickness</Label>
+              <Select {...selectValue(thickness)} onValueChange={setThickness}>
+                <SelectTrigger className="h-12 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {boardingOptions.thicknesses.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">

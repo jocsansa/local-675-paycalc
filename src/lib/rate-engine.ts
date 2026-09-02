@@ -14,11 +14,27 @@ export type CalculationType =
   | "tiered"
   | "percentage"
   | "per_sq_ft"
+  | "per_1000_sq_ft"
   | "per_linear_ft"
+  | "per_1000_linear_ft"
   | "per_sheet"
   | "per_item"
   | "fixed"
   | "conditional";
+
+/**
+ * Calculation types whose rate is quoted per thousand units. Piecework
+ * agreements (Local 675 among them) quote boarding "per 1000 square feet", so
+ * the quantity has to be divided by 1000 before applying the rate.
+ */
+const PER_THOUSAND = new Set(["per_1000_sq_ft", "per_1000_linear_ft"]);
+
+export const isPerThousand = (calculationType: string) => PER_THOUSAND.has(calculationType);
+
+/** Applies a rate to a quantity, honouring per-thousand pricing. */
+export function applyRate(quantity: number, rate: number, calculationType: string): number {
+  return round2(isPerThousand(calculationType) ? (quantity / 1000) * rate : quantity * rate);
+}
 
 export type ProjectType = "low_rise" | "high_rise" | "commercial";
 
@@ -154,15 +170,25 @@ export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 10
 export const money = (n: number) =>
   new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(n || 0);
 
+/**
+ * Ceiling-height bands as written in the Local 675 / ISCA residential
+ * agreement, which prices boarding by height. These are only the labels and
+ * the fallback list: the job builder offers whichever bands the loaded rate
+ * table actually defines, so a different agreement's ladder needs no code
+ * change.
+ */
 export const HEIGHT_CATEGORIES = [
-  { value: "up_to_10", label: "Up to 10 ft" },
-  { value: "10_to_12", label: "10 – 12 ft" },
-  { value: "12_to_16", label: "12 – 16 ft" },
-  { value: "over_16", label: "Over 16 ft" },
+  { value: "up_to_8", label: "Up to and including 8 ft" },
+  { value: "8_to_9", label: "Over 8 ft up to and including 9 ft" },
+  { value: "9_to_10", label: "Over 9 ft up to and including 10 ft" },
+  { value: "10_to_11", label: "Over 10 ft up to and including 11 ft" },
+  { value: "11_to_12", label: "Over 11 ft up to and including 12 ft" },
+  { value: "over_12", label: "Over 12 ft" },
 ];
 
 export const MATERIALS = [
   { value: "regular", label: "Regular Board" },
+  { value: "steel_framed", label: "Steel Framed House" },
   { value: "type_x", label: "Type X Fire Rated" },
   { value: "moisture", label: "Moisture Resistant" },
   { value: "abuse", label: "Abuse / Impact Resistant" },
@@ -253,20 +279,35 @@ function sourceFrom(ctx: EngineContext, item: RateItem): RateSource {
 
 /* --------------------------------------------------------------- lookups */
 
+/**
+ * Finds the boarding rate for a line. A rate row that leaves material,
+ * thickness or height blank is a wildcard matching any value — Local 675
+ * prices boarding by ceiling height alone, while other agreements price by
+ * material and thickness. When several rows match, the most specific one wins,
+ * so an agreement can state a general rate plus narrower exceptions.
+ */
 export function findBoardingRate(
   ctx: EngineContext,
   projectType: string,
   b: BoardingInput,
 ): RateItem | undefined {
-  return ctx.items.find(
+  const matchesOrWild = (rowValue: string | null | undefined, input: string | null | undefined) =>
+    rowValue === null || rowValue === undefined || rowValue === "" || rowValue === (input ?? null);
+
+  const candidates = ctx.items.filter(
     (i) =>
       i.active !== false &&
       i.category === "boarding" &&
       i.project_type === projectType &&
-      i.material === b.material &&
-      (i.thickness ?? null) === (b.thickness ?? null) &&
-      (i.height_category ?? null) === (b.height_category ?? null),
+      matchesOrWild(i.material, b.material) &&
+      matchesOrWild(i.thickness, b.thickness) &&
+      matchesOrWild(i.height_category, b.height_category),
   );
+
+  const specificity = (i: RateItem) =>
+    (i.material ? 1 : 0) + (i.thickness ? 1 : 0) + (i.height_category ? 1 : 0);
+
+  return [...candidates].sort((a, b2) => specificity(b2) - specificity(a))[0];
 }
 
 export function findItem(
@@ -326,7 +367,15 @@ export function calculateBoarding(
 ): CalcLine {
   const sqft = boardingSqFt(b);
   const item = findBoardingRate(ctx, projectType, b);
-  const label = `${labelFor(MATERIALS, b.material)} ${b.thickness ?? ""}`.trim();
+  // When the agreement does not price by material or thickness those fields are
+  // blank, so fall back to the rate row's own name.
+  const label =
+    [b.material ? labelFor(MATERIALS, b.material) : "", b.thickness ?? ""]
+      .filter(Boolean)
+      .join(" ")
+      .trim() ||
+    item?.item_name ||
+    "Boarding";
   const detail = [b.location, labelFor(HEIGHT_CATEGORIES, b.height_category)]
     .filter(Boolean)
     .join(" · ");
@@ -351,10 +400,14 @@ export function calculateBoarding(
   }
 
   const rate = Number(item.rate);
+  const per1000 = isPerThousand(item.calculation_type);
+  const priced = per1000
+    ? `(${sqft} ÷ 1000) × $${rate.toFixed(2)} per 1000 sq ft`
+    : `${sqft} sq ft × $${rate.toFixed(4)}`;
   const formula =
     b.entry_mode === "sheets"
-      ? `${b.sheet_width} ft × ${b.sheet_height} ft × ${b.quantity} sheets = ${sqft} sq ft × $${rate.toFixed(4)}`
-      : `${sqft} sq ft × $${rate.toFixed(4)}`;
+      ? `${b.sheet_width} ft × ${b.sheet_height} ft × ${b.quantity} sheets = ${sqft} sq ft → ${priced}`
+      : priced;
 
   return {
     section: "boarding",
@@ -364,7 +417,7 @@ export function calculateBoarding(
     unit: item.unit,
     rate,
     formula,
-    subtotal: round2(sqft * rate),
+    subtotal: applyRate(sqft, rate, item.calculation_type),
     missing: false,
     source: sourceFrom(ctx, item),
   };
@@ -372,11 +425,7 @@ export function calculateBoarding(
 
 /* ----------------------------------------------------------------- extras */
 
-export function calculateExtra(
-  ctx: EngineContext,
-  projectType: string,
-  e: ExtraInput,
-): CalcLine {
+export function calculateExtra(ctx: EngineContext, projectType: string, e: ExtraInput): CalcLine {
   const item = findItem(ctx, projectType, "extra", e.item_code);
   const qty = e.quantity || 0;
 
@@ -430,6 +479,8 @@ export function calculateExtra(
   const included = Number(item.included_qty ?? 0);
   const billable = Math.max(0, qty - included);
   const rate = Number(item.rate);
+  const per1000 = isPerThousand(item.calculation_type);
+  const base = included > 0 ? `(${qty} − ${included} included)` : `${qty}`;
   return {
     section: "extras",
     label: item.item_name,
@@ -437,11 +488,10 @@ export function calculateExtra(
     quantity: qty,
     unit: item.unit,
     rate,
-    formula:
-      included > 0
-        ? `(${qty} − ${included}) × $${rate.toFixed(2)}`
-        : `${qty} × $${rate.toFixed(2)}`,
-    subtotal: round2(billable * rate),
+    formula: per1000
+      ? `${base} ÷ 1000 × $${rate.toFixed(2)} per 1000 ${item.unit}`
+      : `${base} × $${rate.toFixed(2)}`,
+    subtotal: applyRate(billable, rate, item.calculation_type),
     missing: false,
     source: sourceFrom(ctx, item),
   };
@@ -494,6 +544,11 @@ export function calculatePremium(
       quantity = totals.totalSqFt;
       subtotal = round2(totals.totalSqFt * rate);
       formula = `${totals.totalSqFt} sq ft × $${rate.toFixed(4)}`;
+      break;
+    case "per_1000_sq_ft":
+      quantity = totals.totalSqFt;
+      subtotal = applyRate(totals.totalSqFt, rate, item.calculation_type);
+      formula = `(${totals.totalSqFt} ÷ 1000) × $${rate.toFixed(2)} per 1000 sq ft`;
       break;
     case "per_sheet":
       quantity = totals.totalSheets;

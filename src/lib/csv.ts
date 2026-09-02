@@ -177,7 +177,7 @@ export function csvToRateItems(text: string, rateTableId: string): CsvImportResu
 export function rateTemplateCsv(): string {
   const materials = ["regular", "type_x", "moisture"];
   const thicknesses = ['1/2"', '5/8"'];
-  const heights = ["up_to_10", "10_to_12", "12_to_16", "over_16"];
+  const heights = ["up_to_8", "8_to_9", "9_to_10", "10_to_11", "11_to_12", "over_12"];
   const projectTypes = ["low_rise", "high_rise", "commercial"];
 
   const extras: [string, string, string, string, string][] = [

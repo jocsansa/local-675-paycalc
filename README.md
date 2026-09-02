@@ -134,14 +134,35 @@ Construir uma APLICAÇÃO COMPLETAMENTE FUNCIONAL, não um protótipo estático.
 - Tela de gestão de usuários e roles (o schema já suporta; a UI ainda não)
 - Editor visual de faixas (`rate_tiers`) — hoje via `included_qty` ou inserção direta
 
-### Configurando as taxas
+### Taxas do Local 675 (2025–2028)
 
-O app **nunca inventa uma taxa**. Antes do primeiro cálculo:
+Em **Rates**, o botão **Load Local 675 2025–2028** carrega o schedule publicado
+como três rate tables, uma por ano do acordo, e o engine escolhe a que vigora na
+data de cada job.
 
-1. **Rates → novo Agreement** (ex.: "Local 675 Drywall Agreement").
-2. **Novo Rate Table** com a versão e a data de vigência do acordo.
-3. **CSV template** → baixa a planilha com todas as linhas e a coluna `rate` **vazia**.
-4. Preencher as taxas a partir do acordo coletivo e **importar**.
+Fonte: *Residential Agreement* entre a Interior Systems Contractors Association
+of Ontario e a Drywall Acoustic Lathing and Insulation Local 675, vigente de
+**1 mai 2025 a 30 abr 2028**, Artigo 6 (Wages), páginas 7–13.
+Os valores estão transcritos em [`src/data/local675-2025-2028.ts`](src/data/local675-2025-2028.ts)
+e travados por testes.
+
+Como o acordo precifica:
+
+- **Boarding por altura de teto**, em faixas: até 8 ft, 8–9, 9–10, 10–11, 11–12.
+  High rise não tem faixa igual ou abaixo de 8 ft.
+- **Rates por 1000 sq ft**, não por sq ft (`calculation_type: per_1000_sq_ft`).
+- **Sem distinção de material ou espessura** no boarding — Fire Code Type "C" é
+  um *premium* somado por cima, não uma taxa de boarding separada.
+
+Por isso o formulário mostra material/espessura apenas quando a tabela de taxas
+carregada realmente precifica por eles.
+
+### Outro acordo ou jurisdição
+
+1. **Rates → novo Agreement**.
+2. **Novo Rate Table** com versão e data de vigência.
+3. **CSV template** → planilha com todas as linhas e a coluna `rate` **vazia**.
+4. Preencher a partir do acordo e **importar**.
 
 Linhas com `rate` vazia ou não numérica são recusadas na importação e reportadas.
 Qualquer combinação sem taxa configurada aparece como `RATE NOT CONFIGURED` e soma $0 —
