@@ -17,10 +17,11 @@ import {
 import { useRateBundle, useRateTables } from "@/lib/queries";
 import { selectValue } from "@/lib/utils";
 import {
+  ANY_VALUE,
+  boardingDimensions,
   calculateJobTotal,
   HEIGHT_CATEGORIES,
   labelFor,
-  MATERIALS,
   money,
   PROJECT_TYPES,
   selectRateTableForDate,
@@ -68,35 +69,19 @@ function QuickCalculator() {
 
   // Same rule as the job builder: offer only the dimensions this rate table
   // actually prices boarding on.
-  const boardingOptions = useMemo(() => {
-    const rows = ctx.items.filter(
-      (i) => i.category === "boarding" && i.project_type === projectType && i.active !== false,
-    );
-    const uniq = (values: (string | null | undefined)[]) => [
-      ...new Set(values.filter((v): v is string => Boolean(v))),
-    ];
-    const order = (v: string) => {
-      const i = HEIGHT_CATEGORIES.findIndex((h) => h.value === v);
-      return i === -1 ? HEIGHT_CATEGORIES.length : i;
-    };
-    return {
-      heights: uniq(rows.map((i) => i.height_category)).sort((a, b) => order(a) - order(b)),
-      materials: uniq(rows.map((i) => i.material)),
-      thicknesses: uniq(rows.map((i) => i.thickness)),
-    };
-  }, [ctx.items, projectType]);
+  const boardingOptions = useMemo(
+    () => boardingDimensions(ctx.items, projectType),
+    [ctx.items, projectType],
+  );
 
   // Keep the selections valid when the project type or rate table changes.
+  // Material and thickness default to blank so the height band drives the rate.
   useEffect(() => {
     setHeight((h) =>
       boardingOptions.heights.includes(h) ? h : (boardingOptions.heights[0] ?? ""),
     );
-    setMaterial((m) =>
-      boardingOptions.materials.includes(m) ? m : (boardingOptions.materials[0] ?? ""),
-    );
-    setThickness((t) =>
-      boardingOptions.thicknesses.includes(t) ? t : (boardingOptions.thicknesses[0] ?? ""),
-    );
+    setMaterial((m) => (boardingOptions.materials.some((o) => o.value === m) ? m : ""));
+    setThickness((t) => (boardingOptions.thicknesses.some((o) => o.value === t) ? t : ""));
   }, [boardingOptions]);
 
   const quickExtras = ctx.items
@@ -218,14 +203,17 @@ function QuickCalculator() {
           {boardingOptions.materials.length > 0 ? (
             <div className="space-y-1">
               <Label className="text-xs">Material</Label>
-              <Select {...selectValue(material)} onValueChange={setMaterial}>
+              <Select
+                value={material || ANY_VALUE}
+                onValueChange={(v) => setMaterial(v === ANY_VALUE ? "" : v)}
+              >
                 <SelectTrigger className="h-12 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {boardingOptions.materials.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {labelFor(MATERIALS, m)}
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -235,14 +223,17 @@ function QuickCalculator() {
           {boardingOptions.thicknesses.length > 0 ? (
             <div className="space-y-1">
               <Label className="text-xs">Thickness</Label>
-              <Select {...selectValue(thickness)} onValueChange={setThickness}>
+              <Select
+                value={thickness || ANY_VALUE}
+                onValueChange={(v) => setThickness(v === ANY_VALUE ? "" : v)}
+              >
                 <SelectTrigger className="h-12 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {boardingOptions.thicknesses.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

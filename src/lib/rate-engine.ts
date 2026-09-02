@@ -325,6 +325,64 @@ export function findItem(
   );
 }
 
+/* ------------------------------------------------- form options from rates */
+
+/** Sentinel for "this rate does not price on that dimension" — Radix rejects "". */
+export const ANY_VALUE = "__any__";
+
+export interface BoardingDimensions {
+  /** Height bands this table prices, in ladder order. */
+  heights: string[];
+  materials: { value: string; label: string }[];
+  thicknesses: { value: string; label: string }[];
+}
+
+/**
+ * Works out which boarding dimensions a rate table actually prices on, so the
+ * entry form can offer exactly those. Local 675 prices by ceiling height, so
+ * the material and thickness pickers collapse to nothing; an agreement that
+ * prices by board type gets those pickers back with no code change.
+ *
+ * A dimension that some rows leave blank gains a "Not specified" choice, and a
+ * dimension with only one possible answer is dropped entirely.
+ */
+export function boardingDimensions(items: RateItem[], projectType: string): BoardingDimensions {
+  const rows = items.filter(
+    (i) => i.category === "boarding" && i.project_type === projectType && i.active !== false,
+  );
+
+  const uniq = (values: (string | null | undefined)[]) => [
+    ...new Set(values.filter((v): v is string => Boolean(v))),
+  ];
+
+  const order = (value: string) => {
+    const i = HEIGHT_CATEGORIES.findIndex((h) => h.value === value);
+    return i === -1 ? HEIGHT_CATEGORIES.length : i;
+  };
+
+  const optionsFor = (values: string[], hasBlank: boolean, label: (v: string) => string) => {
+    const opts = [
+      ...(hasBlank ? [{ value: ANY_VALUE, label: "Not specified" }] : []),
+      ...values.map((v) => ({ value: v, label: label(v) })),
+    ];
+    return opts.length > 1 ? opts : [];
+  };
+
+  return {
+    heights: uniq(rows.map((i) => i.height_category)).sort((a, b) => order(a) - order(b)),
+    materials: optionsFor(
+      uniq(rows.map((i) => i.material)),
+      rows.some((i) => !i.material),
+      (v) => labelFor(MATERIALS, v),
+    ),
+    thicknesses: optionsFor(
+      uniq(rows.map((i) => i.thickness)),
+      rows.some((i) => !i.thickness),
+      (v) => v,
+    ),
+  };
+}
+
 /* ------------------------------------------------------------- tiered rate */
 
 export interface TieredResult {

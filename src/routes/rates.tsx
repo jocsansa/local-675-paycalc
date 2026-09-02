@@ -43,6 +43,7 @@ import { useAuth } from "@/lib/auth";
 import { selectValue } from "@/lib/utils";
 import {
   HEIGHT_CATEGORIES,
+  labelFor,
   MATERIALS,
   PROJECT_TYPES,
   THICKNESSES,
@@ -392,15 +393,17 @@ function RateManager() {
               <tbody className="divide-y divide-border/60">
                 {visibleItems.map((i) => (
                   <tr key={i.id} className={i.active === false ? "opacity-50" : undefined}>
-                    <Td>{i.project_type}</Td>
+                    <Td>{labelFor(PROJECT_TYPES, i.project_type)}</Td>
                     <Td>{i.category}</Td>
                     <Td>
                       <span className="font-medium">{i.item_name}</span>
                       <span className="block text-[11px] text-muted-foreground">{i.item_code}</span>
                     </Td>
-                    <Td>{i.material ?? "—"}</Td>
-                    <Td>{i.thickness ?? "—"}</Td>
-                    <Td>{i.height_category ?? "—"}</Td>
+                    <Td>{i.material ? labelFor(MATERIALS, i.material) : "Any"}</Td>
+                    <Td>{i.thickness ? i.thickness : "Any"}</Td>
+                    <Td>
+                      {i.height_category ? labelFor(HEIGHT_CATEGORIES, i.height_category) : "Any"}
+                    </Td>
                     <Td>{i.unit}</Td>
                     <Td className="numeric text-right font-semibold">
                       {Number(i.rate).toFixed(4)}
@@ -780,9 +783,11 @@ function blank(rateTableId: string, existing?: RateItem): RateItemDraft {
     category: "boarding",
     item_code: "",
     item_name: "",
-    material: "regular",
-    thickness: '1/2"',
-    height_category: "up_to_10",
+    // Blank material and thickness mean "any", which is how most piecework
+    // agreements price boarding — by height alone.
+    material: "",
+    thickness: "",
+    height_category: HEIGHT_CATEGORIES[0]?.value ?? "",
     unit: "sq_ft",
     rate: 0,
     calculation_type: "per_sq_ft",

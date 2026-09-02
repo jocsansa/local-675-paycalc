@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ANY_VALUE,
+  boardingDimensions,
   boardingSheets,
   boardingSqFt,
   calculateBoarding,
@@ -494,6 +496,96 @@ describe("Local 675 2025–2028 schedule", () => {
     expect(r.premiums_total).toBe(143); // 10 × $14.30
     expect(r.grand_total).toBe(4598);
     expect(r.metrics.missing_rates).toBe(0);
+  });
+});
+
+describe("boarding form options", () => {
+  const items = LOCAL_675_RATES.map((r, idx) => ({
+    id: `seed-${idx}`,
+    rate_table_id: TABLE.id,
+    project_type: r.project_type,
+    category: r.category,
+    item_code: r.item_code,
+    item_name: r.item_name,
+    material: r.material ?? null,
+    thickness: r.thickness ?? null,
+    height_category: r.height_category ?? null,
+    unit: r.unit,
+    rate: r.rates[0],
+    calculation_type: r.calculation_type,
+    included_qty: r.included_qty ?? 0,
+    active: true,
+  }));
+
+  it("offers the low-rise ladder starting at the 8 ft band", () => {
+    expect(boardingDimensions(items, "low_rise").heights).toEqual([
+      "up_to_8",
+      "8_to_9",
+      "9_to_10",
+      "10_to_11",
+      "11_to_12",
+    ]);
+  });
+
+  it("starts high rise at the 8-to-9 band, matching the agreement", () => {
+    expect(boardingDimensions(items, "high_rise").heights).toEqual([
+      "8_to_9",
+      "9_to_10",
+      "10_to_11",
+      "11_to_12",
+    ]);
+  });
+
+  it("keeps the height-priced rate reachable next to the steel framed rate", () => {
+    const materials = boardingDimensions(items, "low_rise").materials;
+    expect(materials.map((m) => m.value)).toEqual([ANY_VALUE, "steel_framed"]);
+    expect(materials[0]?.label).toBe("Not specified");
+  });
+
+  it("hides the material picker for high rise, which prices by height alone", () => {
+    expect(boardingDimensions(items, "high_rise").materials).toEqual([]);
+  });
+
+  it("never offers a thickness, because the agreement does not price on one", () => {
+    expect(boardingDimensions(items, "low_rise").thicknesses).toEqual([]);
+    expect(boardingDimensions(items, "high_rise").thicknesses).toEqual([]);
+  });
+
+  it("brings the pickers back for an agreement that prices by board type", () => {
+    const dims = boardingDimensions(
+      [
+        item({
+          category: "boarding",
+          item_code: "A",
+          material: "regular",
+          thickness: '1/2"',
+          height_category: "up_to_8",
+        }),
+        item({
+          category: "boarding",
+          item_code: "B",
+          material: "type_x",
+          thickness: '5/8"',
+          height_category: "up_to_8",
+        }),
+      ],
+      "low_rise",
+    );
+    expect(dims.materials.map((m) => m.value)).toEqual(["regular", "type_x"]);
+    expect(dims.thicknesses.map((t) => t.value)).toEqual(['1/2"', '5/8"']);
+  });
+
+  it("ignores deactivated rows", () => {
+    const withRetired = [
+      ...items,
+      item({
+        category: "boarding",
+        item_code: "OLD",
+        height_category: "over_12",
+        active: false,
+      }),
+    ];
+    expect(boardingDimensions(withRetired, "low_rise").heights).not.toContain("over_12");
   });
 });
 

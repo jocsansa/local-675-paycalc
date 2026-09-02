@@ -25,14 +25,16 @@ import { saveJob, type JobArea, type JobDraft } from "@/lib/db";
 import { useAgreements, useJobDraft, useRateBundle, useRateTables } from "@/lib/queries";
 import { selectValue } from "@/lib/utils";
 import {
+  ANY_VALUE,
+  boardingDimensions,
   boardingSqFt,
   calculateJobTotal,
   HEIGHT_CATEGORIES,
   labelFor,
-  MATERIALS,
   money,
   PROJECT_TYPES,
   selectRateTableForDate,
+  type BoardingDimensions,
   type CalculationResult,
   type EngineContext,
 } from "@/lib/rate-engine";
@@ -53,12 +55,6 @@ const makeId = () =>
     : `tmp-${Math.random().toString(36).slice(2)}`;
 
 const today = () => new Date().toISOString().slice(0, 10);
-
-/** Keeps height bands in ladder order even when they come from the rate table. */
-const heightOrder = (value: string) => {
-  const i = HEIGHT_CATEGORIES.findIndex((h) => h.value === value);
-  return i === -1 ? HEIGHT_CATEGORIES.length : i;
-};
 
 function emptyDraft(): JobDraft {
   return {
@@ -198,21 +194,10 @@ function JobBuilder() {
   // Local 675 prices boarding by ceiling height alone, so the material and
   // thickness pickers disappear rather than offering choices that change nothing.
   const boardingOptions = useMemo(() => {
-    const rows = ctx.items.filter(
-      (i) =>
-        i.category === "boarding" && i.project_type === draft.project_type && i.active !== false,
-    );
-    const uniq = (values: (string | null | undefined)[]) => [
-      ...new Set(values.filter((v): v is string => Boolean(v))),
-    ];
-    const heights = uniq(rows.map((i) => i.height_category)).sort(
-      (a, b) => heightOrder(a) - heightOrder(b),
-    );
-    return {
-      heights: heights.length ? heights : HEIGHT_CATEGORIES.map((h) => h.value),
-      materials: uniq(rows.map((i) => i.material)),
-      thicknesses: uniq(rows.map((i) => i.thickness)),
-    };
+    const dims = boardingDimensions(ctx.items, draft.project_type);
+    // Before any boarding rate exists, fall back to the standard ladder so the
+    // form is still usable — every line will read RATE NOT CONFIGURED.
+    return dims.heights.length ? dims : { ...dims, heights: HEIGHT_CATEGORIES.map((h) => h.value) };
   }, [ctx.items, draft.project_type]);
 
   const extraItems = ctx.items.filter(
@@ -685,12 +670,6 @@ function AreasEditor({ draft, patch }: { draft: JobDraft; patch: (p: Partial<Job
 
 /* ------------------------------------------------------------ step: boarding */
 
-interface BoardingOptions {
-  heights: string[];
-  materials: string[];
-  thicknesses: string[];
-}
-
 function BoardingStep({
   draft,
   patch,
@@ -698,7 +677,7 @@ function BoardingStep({
 }: {
   draft: JobDraft;
   patch: (p: Partial<JobDraft>) => void;
-  options: BoardingOptions;
+  options: BoardingDimensions;
 }) {
   const add = () =>
     patch({
@@ -708,10 +687,11 @@ function BoardingStep({
           id: makeId(),
           area_id: draft.areas[0]?.id ?? null,
           location: "",
-          // Blank when the rate table does not price on that dimension, so the
-          // wildcard lookup in the engine still finds the rate.
-          material: options.materials[0] ?? "",
-          thickness: options.thicknesses[0] ?? null,
+          // Blank by default: the height band drives the rate, and a wildcard
+          // lookup still finds it. The user opts into a material only when the
+          // rate table actually prices on one.
+          material: "",
+          thickness: null,
           height_category: options.heights[0] ?? null,
           sheet_width: 4,
           sheet_height: 8,
@@ -763,20 +743,17 @@ function BoardingStep({
               {options.materials.length > 0 ? (
                 <LabeledSelect
                   label="Material"
-                  value={b.material}
-                  onChange={(v) => update(b.id, { material: v })}
-                  options={options.materials.map((m) => ({
-                    value: m,
-                    label: labelFor(MATERIALS, m),
-                  }))}
+                  value={b.material || ANY_VALUE}
+                  onChange={(v) => update(b.id, { material: v === ANY_VALUE ? "" : v })}
+                  options={options.materials}
                 />
               ) : null}
               {options.thicknesses.length > 0 ? (
                 <LabeledSelect
                   label="Thickness"
-                  value={b.thickness ?? ""}
-                  onChange={(v) => update(b.id, { thickness: v })}
-                  options={options.thicknesses.map((t) => ({ value: t, label: t }))}
+                  value={b.thickness || ANY_VALUE}
+                  onChange={(v) => update(b.id, { thickness: v === ANY_VALUE ? null : v })}
+                  options={options.thicknesses}
                 />
               ) : null}
               {draft.areas.length > 0 ? (
