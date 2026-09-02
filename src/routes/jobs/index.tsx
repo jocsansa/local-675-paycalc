@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { deleteJob } from "@/lib/db";
 import { useAgreements, useJobs } from "@/lib/queries";
 import { labelFor, money, PROJECT_TYPES } from "@/lib/rate-engine";
+import { getErrorMessage } from "@/lib/utils";
 
 export const Route = createFileRoute("/jobs/")({
   component: JobsPage,
@@ -64,7 +65,7 @@ function JobsList() {
       await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       toast.success("Job deleted.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not delete the job.");
+      toast.error(getErrorMessage(e, "Could not delete the job."));
     }
   }
 

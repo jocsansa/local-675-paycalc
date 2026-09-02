@@ -40,7 +40,7 @@ import {
 } from "@/lib/db";
 import { useAgreements, useRateItems, useRateTables } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
-import { selectValue } from "@/lib/utils";
+import { getErrorMessage, selectValue } from "@/lib/utils";
 import {
   HEIGHT_CATEGORIES,
   heightLabel,
@@ -130,7 +130,7 @@ function RateManager() {
       );
       if (errors.length) console.warn("CSV import issues:", errors);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Import failed.");
+      toast.error(getErrorMessage(e, "Import failed."));
     }
   }
 
@@ -310,7 +310,7 @@ function RateManager() {
               await queryClient.invalidateQueries({ queryKey: ["rate_tables"] });
               toast.success(`Loaded ${rates} rates across ${tables} contract years.`);
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Could not load the schedule.");
+              toast.error(getErrorMessage(e, "Could not load the schedule."));
             } finally {
               setSeeding(false);
             }
@@ -523,7 +523,7 @@ function NewAgreementDialog({
                 setName("");
                 toast.success("Agreement created.");
               } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Could not create the agreement.");
+                toast.error(getErrorMessage(e, "Could not create the agreement."));
               }
             }}
           >
@@ -611,7 +611,7 @@ function NewRateTableDialog({
                 setVersion("");
                 toast.success("Rate table created.");
               } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Could not create the rate table.");
+                toast.error(getErrorMessage(e, "Could not create the rate table."));
               }
             }}
           >
@@ -768,7 +768,7 @@ function RateItemDialog({
                 setOpen(false);
                 toast.success("Rate saved.");
               } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Could not save the rate.");
+                toast.error(getErrorMessage(e, "Could not save the rate."));
               }
             }}
           >

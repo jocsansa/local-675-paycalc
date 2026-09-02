@@ -23,7 +23,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { saveJob, type JobArea, type JobDraft } from "@/lib/db";
 import { useAgreements, useJobDraft, useRateBundle, useRateTables } from "@/lib/queries";
-import { selectValue } from "@/lib/utils";
+import { getErrorMessage, selectValue } from "@/lib/utils";
 import {
   ANY_VALUE,
   boardingDimensions,
@@ -228,7 +228,7 @@ function JobBuilder() {
       toast.success("Job saved.");
       void navigate({ to: "/jobs/$id", params: { id } });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save the job.");
+      toast.error(getErrorMessage(e, "Could not save the job."));
     } finally {
       setSaving(false);
     }
