@@ -1,0 +1,13 @@
+-- The previous migration revoked EXECUTE on has_role() from authenticated.
+-- has_role() is called inside every "_admin" RLS policy (agreements_admin,
+-- rate_tables_admin, rate_items_admin, rate_tiers_admin, rate_rules_admin):
+--   using (public.has_role(auth.uid(), 'admin'))
+-- Evaluating a policy expression checks the invoking role's EXECUTE privilege
+-- on any function it calls, regardless of that function being SECURITY
+-- DEFINER — SECURITY DEFINER only changes whose privileges the function body
+-- runs with once execution has already been permitted. With EXECUTE revoked,
+-- every write gated by an "_admin" policy fails with:
+--   "permission denied for function has_role (42501)"
+-- for every authenticated user, admin or not. This was true from the first
+-- migration onward; it was never a working code path in the client app.
+grant execute on function public.has_role(uuid, public.app_role) to authenticated;

@@ -28,6 +28,7 @@ import {
   ANY_VALUE,
   boardingDimensions,
   boardingSqFt,
+  defaultBoardingValue,
   calculateJobTotal,
   HEIGHT_CATEGORIES,
   heightLabel,
@@ -680,7 +681,12 @@ function BoardingStep({
   patch: (p: Partial<JobDraft>) => void;
   options: BoardingDimensions;
 }) {
-  const add = () =>
+  const add = () => {
+    // Blank ("wildcard") when the table offers one, otherwise the first named
+    // value — a table that requires a material on every row has no wildcard,
+    // so defaulting to blank would leave the picker showing nothing selected.
+    const material = defaultBoardingValue(options.materials);
+    const thickness = defaultBoardingValue(options.thicknesses) || null;
     patch({
       boarding: [
         ...draft.boarding,
@@ -688,11 +694,8 @@ function BoardingStep({
           id: makeId(),
           area_id: draft.areas[0]?.id ?? null,
           location: "",
-          // Blank by default: the height band drives the rate, and a wildcard
-          // lookup still finds it. The user opts into a material only when the
-          // rate table actually prices on one.
-          material: "",
-          thickness: null,
+          material,
+          thickness,
           height_category: options.heights[0] ?? null,
           sheet_width: 4,
           sheet_height: 8,
@@ -701,6 +704,7 @@ function BoardingStep({
         },
       ],
     });
+  };
 
   const update = (id: string, p: Partial<JobDraft["boarding"][number]>) =>
     patch({ boarding: draft.boarding.map((b) => (b.id === id ? { ...b, ...p } : b)) });

@@ -20,6 +20,7 @@ import {
   ANY_VALUE,
   boardingDimensions,
   calculateJobTotal,
+  defaultBoardingValue,
   heightLabel,
   money,
   PROJECT_TYPES,
@@ -74,13 +75,24 @@ function QuickCalculator() {
   );
 
   // Keep the selections valid when the project type or rate table changes.
-  // Material and thickness default to blank so the height band drives the rate.
+  // Material and thickness default to the wildcard when the table offers one
+  // (letting the height band drive the rate); otherwise to the first named
+  // value, since a table that requires a material on every row has no
+  // wildcard for the picker to show as selected.
   useEffect(() => {
     setHeight((h) =>
       boardingOptions.heights.includes(h) ? h : (boardingOptions.heights[0] ?? ""),
     );
-    setMaterial((m) => (boardingOptions.materials.some((o) => o.value === m) ? m : ""));
-    setThickness((t) => (boardingOptions.thicknesses.some((o) => o.value === t) ? t : ""));
+    setMaterial((m) =>
+      boardingOptions.materials.some((o) => o.value === m)
+        ? m
+        : defaultBoardingValue(boardingOptions.materials),
+    );
+    setThickness((t) =>
+      boardingOptions.thicknesses.some((o) => o.value === t)
+        ? t
+        : defaultBoardingValue(boardingOptions.thicknesses),
+    );
   }, [boardingOptions]);
 
   const quickExtras = ctx.items

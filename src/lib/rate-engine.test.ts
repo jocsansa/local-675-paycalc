@@ -11,6 +11,7 @@ import {
   calculatePremium,
   calculateTieredRate,
   compareHeights,
+  defaultBoardingValue,
   heightLabel,
   RATE_NOT_CONFIGURED,
   round2,
@@ -631,6 +632,62 @@ describe("boarding form options", () => {
       }),
     ];
     expect(boardingDimensions(withRetired, "low_rise").heights).not.toContain("over_12");
+  });
+});
+
+describe("defaultBoardingValue", () => {
+  it("defaults to blank when a wildcard option is available", () => {
+    const dims = boardingDimensions(
+      LOCAL_675_RATES.map((r, idx) => ({
+        id: `seed-${idx}`,
+        rate_table_id: TABLE.id,
+        project_type: r.project_type,
+        category: r.category,
+        item_code: r.item_code,
+        item_name: r.item_name,
+        material: r.material ?? null,
+        thickness: r.thickness ?? null,
+        height_category: r.height_category ?? null,
+        unit: r.unit,
+        rate: r.rates[0],
+        calculation_type: r.calculation_type,
+        included_qty: r.included_qty ?? 0,
+        active: true,
+      })),
+      "low_rise",
+    );
+    // Local 675: material has a wildcard (height-only pricing) alongside steel framed.
+    expect(defaultBoardingValue(dims.materials)).toBe("");
+  });
+
+  it("defaults to the first named value when every row requires one", () => {
+    // A table where boarding is always priced by a specific material (no
+    // wildcard row) — the picker must land on something it can display.
+    const dims = boardingDimensions(
+      [
+        item({
+          category: "boarding",
+          item_code: "A",
+          material: "regular",
+          thickness: '1/2"',
+          height_category: "up_to_8",
+        }),
+        item({
+          category: "boarding",
+          item_code: "B",
+          material: "type_x",
+          thickness: '5/8"',
+          height_category: "up_to_8",
+        }),
+      ],
+      "low_rise",
+    );
+    expect(defaultBoardingValue(dims.materials)).toBe("regular");
+    expect(defaultBoardingValue(dims.thicknesses)).toBe('1/2"');
+  });
+
+  it("returns blank when there are no options at all", () => {
+    expect(defaultBoardingValue([])).toBe("");
   });
 });
 

@@ -422,6 +422,19 @@ export function boardingDimensions(items: RateItem[], projectType: string): Boar
   };
 }
 
+/**
+ * The default value for a boarding dimension picker: the wildcard when the
+ * table offers one (blank, so the height band decides the rate), otherwise
+ * the first named option. A table that requires a material on every row has
+ * no wildcard entry, so defaulting to blank would select nothing the picker
+ * can display — this always returns a value actually present in `options`.
+ */
+export function defaultBoardingValue(options: { value: string; label: string }[]): string {
+  const first = options[0];
+  if (!first) return "";
+  return first.value === ANY_VALUE ? "" : first.value;
+}
+
 /* ------------------------------------------------------------- tiered rate */
 
 export interface TieredResult {
