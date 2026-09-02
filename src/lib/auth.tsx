@@ -94,8 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       session,
       roles,
-      // Every signup is seeded as admin by handle_new_user(); until a role row
-      // arrives we optimistically treat a signed-in user as non-admin.
+      // Only the bootstrap (first-ever) signup is seeded as admin by
+      // handle_new_user(); until a role row arrives we treat a signed-in user
+      // as non-admin.
       isAdmin: roles.includes("admin"),
       loading,
       signIn,

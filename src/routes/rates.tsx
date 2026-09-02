@@ -57,8 +57,10 @@ export const Route = createFileRoute("/rates")({
 
 const CALC_TYPES = [
   "per_sq_ft",
+  "per_1000_sq_ft",
   "per_sheet",
   "per_linear_ft",
+  "per_1000_linear_ft",
   "per_item",
   "per_unit",
   "fixed",

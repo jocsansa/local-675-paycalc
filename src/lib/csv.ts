@@ -1,4 +1,4 @@
-import type { RateItem } from "./rate-engine";
+import { CALCULATION_TYPES, RATE_ITEM_CATEGORIES, type RateItem } from "./rate-engine";
 
 /**
  * Rate table CSV interchange. Column order is the spreadsheet order used by the
@@ -145,13 +145,32 @@ export function csvToRateItems(text: string, rateTableId: string): CsvImportResu
       continue;
     }
 
+    // The engine looks rates up by exact category/calculation_type string match
+    // (findItem, findBoardingRate, applyRate) and falls back to $0 or a wrong
+    // formula on a mismatch instead of erroring — so a typo here would price
+    // silently wrong rather than fail loudly. Reject it at import time instead.
+    const category = at(row, "category");
+    if (!RATE_ITEM_CATEGORIES.includes(category as (typeof RATE_ITEM_CATEGORIES)[number])) {
+      errors.push(
+        `Line ${line}: category "${category}" is not one of ${RATE_ITEM_CATEGORIES.join(", ")} — row skipped.`,
+      );
+      continue;
+    }
+    const calculationType = at(row, "calculation_type") || "per_unit";
+    if (!CALCULATION_TYPES.includes(calculationType as (typeof CALCULATION_TYPES)[number])) {
+      errors.push(
+        `Line ${line}: calculation_type "${calculationType}" is not one of ${CALCULATION_TYPES.join(", ")} — row skipped.`,
+      );
+      continue;
+    }
+
     const includedRaw = at(row, "included_qty");
     const activeRaw = at(row, "active").toLowerCase();
 
     out.push({
       rate_table_id: rateTableId,
       project_type: at(row, "project_type"),
-      category: at(row, "category"),
+      category,
       item_code: itemCode,
       item_name: at(row, "item_name") || itemCode,
       material: at(row, "material") || null,
@@ -159,7 +178,7 @@ export function csvToRateItems(text: string, rateTableId: string): CsvImportResu
       height_category: at(row, "height_category") || null,
       unit: at(row, "unit"),
       rate,
-      calculation_type: at(row, "calculation_type") || "per_unit",
+      calculation_type: calculationType,
       included_qty: includedRaw === "" ? 0 : Number(includedRaw) || 0,
       active: activeRaw === "" ? true : activeRaw !== "false" && activeRaw !== "0",
       notes: at(row, "notes") || null,

@@ -26,6 +26,9 @@ pnpm-lock.yaml
 .wrangler/
 .dev.vars
 
+# Local environment values (see .env.example for the required keys)
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -29,6 +29,24 @@ export type CalculationType =
  */
 const PER_THOUSAND = new Set(["per_1000_sq_ft", "per_1000_linear_ft"]);
 
+/** Every calculation type the engine knows how to price — the source of truth for form pickers and import validation. */
+export const CALCULATION_TYPES: CalculationType[] = [
+  "per_unit",
+  "tiered",
+  "percentage",
+  "per_sq_ft",
+  "per_1000_sq_ft",
+  "per_linear_ft",
+  "per_1000_linear_ft",
+  "per_sheet",
+  "per_item",
+  "fixed",
+  "conditional",
+];
+
+/** The three rate item categories the engine looks up by (boarding, extra, premium). */
+export const RATE_ITEM_CATEGORIES = ["boarding", "extra", "premium"] as const;
+
 export const isPerThousand = (calculationType: string) => PER_THOUSAND.has(calculationType);
 
 /** Applies a rate to a quantity, honouring per-thousand pricing. */
