@@ -20,8 +20,7 @@ import {
   ANY_VALUE,
   boardingDimensions,
   calculateJobTotal,
-  HEIGHT_CATEGORIES,
-  labelFor,
+  heightLabel,
   money,
   PROJECT_TYPES,
   selectRateTableForDate,
@@ -194,7 +193,7 @@ function QuickCalculator() {
               <SelectContent>
                 {boardingOptions.heights.map((h) => (
                   <SelectItem key={h} value={h}>
-                    {labelFor(HEIGHT_CATEGORIES, h)}
+                    {heightLabel(h)}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -30,6 +30,7 @@ import {
   boardingSqFt,
   calculateJobTotal,
   HEIGHT_CATEGORIES,
+  heightLabel,
   labelFor,
   money,
   PROJECT_TYPES,
@@ -737,7 +738,7 @@ function BoardingStep({
                 onChange={(v) => update(b.id, { height_category: v })}
                 options={options.heights.map((h) => ({
                   value: h,
-                  label: labelFor(HEIGHT_CATEGORIES, h),
+                  label: heightLabel(h),
                 }))}
               />
               {options.materials.length > 0 ? (

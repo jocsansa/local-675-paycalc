@@ -10,6 +10,8 @@ import {
   calculateJobTotal,
   calculatePremium,
   calculateTieredRate,
+  compareHeights,
+  heightLabel,
   RATE_NOT_CONFIGURED,
   round2,
   selectRateTableForDate,
@@ -496,6 +498,49 @@ describe("Local 675 2025–2028 schedule", () => {
     expect(r.premiums_total).toBe(143); // 10 × $14.30
     expect(r.grand_total).toBe(4598);
     expect(r.metrics.missing_rates).toBe(0);
+  });
+});
+
+describe("height band labels", () => {
+  it("reads the agreement's own bands", () => {
+    expect(heightLabel("up_to_8")).toBe("Up to and including 8 ft");
+    expect(heightLabel("8_to_9")).toBe("Over 8 ft up to and including 9 ft");
+  });
+
+  it("still reads bands this build does not know, instead of showing a raw code", () => {
+    // Bands from a table imported before the ladder was corrected.
+    expect(heightLabel("up_to_10")).toBe("Up to and including 10 ft");
+    expect(heightLabel("10_to_12")).toBe("Over 10 ft up to and including 12 ft");
+    expect(heightLabel("12_to_16")).toBe("Over 12 ft up to and including 16 ft");
+    expect(heightLabel("over_16")).toBe("Over 16 ft");
+  });
+
+  it("calls a blank band Any", () => {
+    expect(heightLabel(null)).toBe("Any");
+    expect(heightLabel("")).toBe("Any");
+  });
+
+  it("falls back to the raw value for something unparseable", () => {
+    expect(heightLabel("weird_band")).toBe("weird_band");
+  });
+
+  it("orders unknown bands by the feet in the code", () => {
+    // The order these came back in before the fix: over_16, 12_to_16, up_to_10, 10_to_12.
+    expect(["over_16", "12_to_16", "up_to_10", "10_to_12"].sort(compareHeights)).toEqual([
+      "up_to_10",
+      "10_to_12",
+      "12_to_16",
+      "over_16",
+    ]);
+  });
+
+  it("orders a mixed ladder correctly", () => {
+    expect(["over_12", "up_to_8", "10_to_11", "8_to_9"].sort(compareHeights)).toEqual([
+      "up_to_8",
+      "8_to_9",
+      "10_to_11",
+      "over_12",
+    ]);
   });
 });
 

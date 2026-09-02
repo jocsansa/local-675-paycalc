@@ -225,6 +225,50 @@ export function labelFor(list: { value: string; label: string }[], value?: strin
   return list.find((l) => l.value === value)?.label ?? value ?? "—";
 }
 
+/**
+ * Sort key for a height band code, derived from the feet in the code itself, so
+ * bands from any agreement — or from an older import — still order correctly.
+ * "up_to_8" sorts before "8_to_9", which sorts before "over_12".
+ */
+export function heightSortKey(value: string): [number, number] {
+  const upTo = /^up_to_(\d+)$/.exec(value);
+  if (upTo) return [0, Number(upTo[1])];
+  const between = /^(\d+)_to_(\d+)$/.exec(value);
+  if (between) return [Number(between[1]), Number(between[2])];
+  const over = /^over_(\d+)$/.exec(value);
+  if (over) return [Number(over[1]), Number.POSITIVE_INFINITY];
+  return [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+}
+
+export function compareHeights(a: string, b: string): number {
+  const [aLow, aHigh] = heightSortKey(a);
+  const [bLow, bHigh] = heightSortKey(b);
+  if (aLow !== bLow) return aLow - bLow;
+  if (aHigh !== bHigh) return aHigh - bHigh;
+  return a.localeCompare(b);
+}
+
+/**
+ * Readable label for a height band. Falls back to reading the feet out of the
+ * code, so a band this build has never heard of — a band from another
+ * agreement, or one imported before the ladder changed — still reads as English
+ * instead of showing a raw code like "12_to_16".
+ */
+export function heightLabel(value?: string | null): string {
+  if (!value) return "Any";
+  const known = HEIGHT_CATEGORIES.find((h) => h.value === value);
+  if (known) return known.label;
+
+  const upTo = /^up_to_(\d+)$/.exec(value);
+  if (upTo) return `Up to and including ${upTo[1]} ft`;
+  const between = /^(\d+)_to_(\d+)$/.exec(value);
+  if (between) return `Over ${between[1]} ft up to and including ${between[2]} ft`;
+  const over = /^over_(\d+)$/.exec(value);
+  if (over) return `Over ${over[1]} ft`;
+
+  return value;
+}
+
 /** Width × Height × Quantity = square feet (or the raw sq ft when entered directly). */
 export function boardingSqFt(b: BoardingInput): number {
   if (b.entry_mode === "sqft") return round2(b.quantity || 0);
@@ -355,11 +399,6 @@ export function boardingDimensions(items: RateItem[], projectType: string): Boar
     ...new Set(values.filter((v): v is string => Boolean(v))),
   ];
 
-  const order = (value: string) => {
-    const i = HEIGHT_CATEGORIES.findIndex((h) => h.value === value);
-    return i === -1 ? HEIGHT_CATEGORIES.length : i;
-  };
-
   const optionsFor = (values: string[], hasBlank: boolean, label: (v: string) => string) => {
     const opts = [
       ...(hasBlank ? [{ value: ANY_VALUE, label: "Not specified" }] : []),
@@ -369,7 +408,7 @@ export function boardingDimensions(items: RateItem[], projectType: string): Boar
   };
 
   return {
-    heights: uniq(rows.map((i) => i.height_category)).sort((a, b) => order(a) - order(b)),
+    heights: uniq(rows.map((i) => i.height_category)).sort(compareHeights),
     materials: optionsFor(
       uniq(rows.map((i) => i.material)),
       rows.some((i) => !i.material),

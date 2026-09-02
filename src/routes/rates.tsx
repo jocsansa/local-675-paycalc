@@ -43,6 +43,7 @@ import { useAuth } from "@/lib/auth";
 import { selectValue } from "@/lib/utils";
 import {
   HEIGHT_CATEGORIES,
+  heightLabel,
   labelFor,
   MATERIALS,
   PROJECT_TYPES,
@@ -90,6 +91,7 @@ function RateManager() {
   const [seeding, setSeeding] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const hasAgreements = (agreements.data ?? []).length > 0;
   const activeAgreementId = agreementId ?? agreements.data?.[0]?.id ?? null;
   const tablesForAgreement = useMemo(
     () => (rateTables.data ?? []).filter((t) => t.agreement_id === activeAgreementId),
@@ -273,46 +275,51 @@ function RateManager() {
         ) : null}
       </section>
 
-      {(agreements.data ?? []).length === 0 ? (
-        <section className="panel space-y-3 p-5">
-          <h2 className="font-display text-sm font-semibold tracking-widest uppercase">
-            Start from the published Local 675 schedule
-          </h2>
+      {/* Always available: an older or hand-built table is exactly when this is
+          most needed, so it must not hide once an agreement exists. */}
+      <section className="panel space-y-3 p-5">
+        <h2 className="font-display text-sm font-semibold tracking-widest uppercase">
+          {hasAgreements
+            ? "Load the published Local 675 schedule"
+            : "Start from the published Local 675 schedule"}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Loads the ISCA / Local 675 residential piecework rates for 2025–2028 as three rate tables,
+          one per contract year, so each job is priced with the rates in force on its date. Boarding
+          is priced per 1000 sq ft by ceiling height, exactly as the agreement states it.
+        </p>
+        {hasAgreements ? (
           <p className="text-sm text-muted-foreground">
-            Loads the ISCA / Local 675 residential piecework rates for 2025–2028 as three rate
-            tables, one per contract year, so each job is priced with the rates in force on its
-            date. Boarding is priced per 1000 sq ft by ceiling height, exactly as the agreement
-            states it.
+            This adds a <strong className="text-foreground">separate</strong> agreement and leaves
+            everything you already have untouched. Use it if your current tables were built before
+            the height bands were corrected — the correct ladder starts at &ldquo;up to and
+            including 8 ft&rdquo;.
           </p>
-          <p className="text-xs text-muted-foreground">
-            Transcribed from Article 6 of the agreement effective May 1, 2025 – April 30, 2028.
-            Check it against your own copy before using a total for payment.
-          </p>
-          <Button
-            disabled={!isAdmin || seeding}
-            onClick={async () => {
-              setSeeding(true);
-              try {
-                const { tables, rates } = await seedLocal675();
-                await queryClient.invalidateQueries({ queryKey: ["agreements"] });
-                await queryClient.invalidateQueries({ queryKey: ["rate_tables"] });
-                toast.success(`Loaded ${rates} rates across ${tables} contract years.`);
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Could not load the schedule.");
-              } finally {
-                setSeeding(false);
-              }
-            }}
-          >
-            {seeding ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Download className="size-4" />
-            )}
-            Load Local 675 2025–2028
-          </Button>
-        </section>
-      ) : null}
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          Transcribed from Article 6 of the agreement effective May 1, 2025 – April 30, 2028. Check
+          it against your own copy before using a total for payment.
+        </p>
+        <Button
+          disabled={!isAdmin || seeding}
+          onClick={async () => {
+            setSeeding(true);
+            try {
+              const { tables, rates } = await seedLocal675();
+              await queryClient.invalidateQueries({ queryKey: ["agreements"] });
+              await queryClient.invalidateQueries({ queryKey: ["rate_tables"] });
+              toast.success(`Loaded ${rates} rates across ${tables} contract years.`);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Could not load the schedule.");
+            } finally {
+              setSeeding(false);
+            }
+          }}
+        >
+          {seeding ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+          Load Local 675 2025–2028
+        </Button>
+      </section>
 
       {!activeTableId ? (
         <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -401,9 +408,7 @@ function RateManager() {
                     </Td>
                     <Td>{i.material ? labelFor(MATERIALS, i.material) : "Any"}</Td>
                     <Td>{i.thickness ? i.thickness : "Any"}</Td>
-                    <Td>
-                      {i.height_category ? labelFor(HEIGHT_CATEGORIES, i.height_category) : "Any"}
-                    </Td>
+                    <Td>{heightLabel(i.height_category)}</Td>
                     <Td>{i.unit}</Td>
                     <Td className="numeric text-right font-semibold">
                       {Number(i.rate).toFixed(4)}

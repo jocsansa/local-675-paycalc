@@ -2,7 +2,7 @@ import { HelpCircle } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  HEIGHT_CATEGORIES,
+  heightLabel,
   MATERIALS,
   labelFor,
   money,
@@ -37,9 +37,7 @@ export function WhyPopover({ line }: { line: CalcLine }) {
           <Row label="Item" value={`${s.item_name} (${s.item_code})`} />
           {s.material ? <Row label="Material" value={labelFor(MATERIALS, s.material)} /> : null}
           {s.thickness ? <Row label="Thickness" value={s.thickness} /> : null}
-          {s.height_category ? (
-            <Row label="Height" value={labelFor(HEIGHT_CATEGORIES, s.height_category)} />
-          ) : null}
+          {s.height_category ? <Row label="Height" value={heightLabel(s.height_category)} /> : null}
           <Row label="Unit" value={s.unit} />
           <Row label="Calculation" value={s.calculation_type} />
           <Row
