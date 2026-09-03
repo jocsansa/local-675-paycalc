@@ -121,7 +121,9 @@ function Report() {
           />
           <Info label="Agreement" value={agreement?.name ?? "—"} />
           <Info label="Rate table" value={table ? `${table.version}` : "—"} />
-          <Info label="Effective date" value={table?.effective_from ?? "—"} />
+          {/* The date stored with the calculation, not the table's current one:
+              a report has to keep showing the rates it was produced under. */}
+          <Info label="Effective date" value={result.effective_date ?? "—"} />
           <Info label="Job date" value={d.job_date} />
           <Info label="Calculated" value={new Date(stored.data.created_at).toLocaleString()} />
         </dl>

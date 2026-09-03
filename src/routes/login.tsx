@@ -131,7 +131,8 @@ function LoginPage() {
                 {busy ? "Creating…" : "Create account"}
               </Button>
               <p className="text-xs text-muted-foreground">
-                The first roles are assigned automatically on signup.
+                Only the first account on a new deployment becomes an admin. Every later account
+                signs in with no role until an admin grants one.
               </p>
             </TabsContent>
           </Tabs>

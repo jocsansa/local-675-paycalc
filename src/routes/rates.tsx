@@ -42,12 +42,15 @@ import { useAgreements, useRateItems, useRateTables } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
 import { getErrorMessage, selectValue } from "@/lib/utils";
 import {
+  ANY_VALUE,
   HEIGHT_CATEGORIES,
   heightLabel,
   labelFor,
   MATERIALS,
   PROJECT_TYPES,
+  RATE_ITEM_CATEGORIES,
   THICKNESSES,
+  type CalculationType,
   type RateItem,
 } from "@/lib/rate-engine";
 
@@ -55,7 +58,11 @@ export const Route = createFileRoute("/rates")({
   component: RatesPage,
 });
 
-const CALC_TYPES = [
+// Typed against the engine's own union so a calculation type the engine cannot
+// price can never reach this picker: the list stays in the order that reads best
+// in the form, but a drifting value is a compile error rather than a rate that
+// silently prices at $0.
+const CALC_TYPES: CalculationType[] = [
   "per_sq_ft",
   "per_1000_sq_ft",
   "per_sheet",
@@ -69,7 +76,7 @@ const CALC_TYPES = [
   "conditional",
 ];
 
-const CATEGORIES = ["boarding", "extra", "premium"];
+const CATEGORIES = RATE_ITEM_CATEGORIES;
 
 function RatesPage() {
   return (
@@ -694,25 +701,31 @@ function RateItemDialog({
           </Field>
           {form.category === "boarding" ? (
             <>
+              {/* Each dimension keeps an explicit "Any" choice: a blank column
+                  is a wildcard in the engine, and without it a value picked by
+                  mistake could never be cleared again. */}
               <Field label="Material">
                 <Pick
-                  value={form.material ?? ""}
-                  onChange={(v) => set({ material: v })}
-                  options={MATERIALS}
+                  value={form.material || ANY_VALUE}
+                  onChange={(v) => set({ material: v === ANY_VALUE ? "" : v })}
+                  options={[{ value: ANY_VALUE, label: "Any material" }, ...MATERIALS]}
                 />
               </Field>
               <Field label="Thickness">
                 <Pick
-                  value={form.thickness ?? ""}
-                  onChange={(v) => set({ thickness: v })}
-                  options={THICKNESSES.map((t) => ({ value: t, label: t }))}
+                  value={form.thickness || ANY_VALUE}
+                  onChange={(v) => set({ thickness: v === ANY_VALUE ? "" : v })}
+                  options={[
+                    { value: ANY_VALUE, label: "Any thickness" },
+                    ...THICKNESSES.map((t) => ({ value: t, label: t })),
+                  ]}
                 />
               </Field>
               <Field label="Height category">
                 <Pick
-                  value={form.height_category ?? ""}
-                  onChange={(v) => set({ height_category: v })}
-                  options={HEIGHT_CATEGORIES}
+                  value={form.height_category || ANY_VALUE}
+                  onChange={(v) => set({ height_category: v === ANY_VALUE ? "" : v })}
+                  options={[{ value: ANY_VALUE, label: "Any height" }, ...HEIGHT_CATEGORIES]}
                 />
               </Field>
             </>

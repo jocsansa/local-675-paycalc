@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { LOCAL_675_AGREEMENT, LOCAL_675_RATES, LOCAL_675_YEARS } from "@/data/local675-2025-2028";
+import { boardingSqFt } from "./rate-engine";
 import type {
   BoardingInput,
   ExtraInput,
@@ -178,6 +179,12 @@ export async function fetchJobDraft(jobId: string): Promise<JobDraft> {
     supabase.from("job_premiums").select("*").eq("job_id", jobId),
   ]);
   if (e1) throw e1;
+  // A failed child query must not read as "this job has no boarding": the
+  // builder hydrates from this draft and saving replaces every child row, so a
+  // silently empty list would delete the real work on the next save.
+  for (const part of [areas, boarding, extras, premiums]) {
+    if (part.error) throw part.error;
+  }
   const j = job as unknown as JobRecord;
   return {
     id: j.id,
@@ -264,8 +271,18 @@ export async function saveJob(draft: JobDraft, result: CalculationResult): Promi
 
   let jobId = draft.id;
   if (jobId) {
-    const { error } = await supabase.from("jobs").update(payload).eq("id", jobId);
+    // Confirm the update actually landed before the deletes below tear the old
+    // child rows down: RLS turns an update against a job that is gone (or that
+    // belongs to someone else) into a silent no-op, not an error.
+    const { data, error } = await supabase
+      .from("jobs")
+      .update(payload)
+      .eq("id", jobId)
+      .select("id");
     if (error) throw error;
+    if (!(data as unknown as { id: string }[] | null)?.length) {
+      throw new Error("This job could not be updated — it no longer exists on your account.");
+    }
     await Promise.all([
       supabase.from("job_boarding_items").delete().eq("job_id", jobId),
       supabase.from("job_extra_items").delete().eq("job_id", jobId),
@@ -314,7 +331,9 @@ export async function saveJob(draft: JobDraft, result: CalculationResult): Promi
         sheet_width: b.sheet_width,
         sheet_height: b.sheet_height,
         quantity: b.quantity,
-        sq_ft: b.entry_mode === "sqft" ? b.quantity : b.sheet_width * b.sheet_height * b.quantity,
+        // Same helper the engine prices with, so the stored square footage can
+        // never drift from the one the total was calculated on.
+        sq_ft: boardingSqFt(b),
         entry_mode: b.entry_mode,
       })),
     );
@@ -445,6 +464,12 @@ export async function saveRateItem(draft: RateItemDraft): Promise<void> {
     notes: draft.notes ?? null,
   };
 
+  // A tiered rate carries its bands in rate_tiers, keyed by rate_item_id. The
+  // replacement row gets a new id, so the bands have to be copied across or a
+  // tiered item would silently fall back to flat included_qty pricing after an
+  // edit. Read them before the supersede so the copy reflects the row as saved.
+  const tiers = draft.id ? await fetchTiersForItem(draft.id) : [];
+
   if (draft.id) {
     const { error: deErr } = await supabase
       .from("rate_items")
@@ -452,8 +477,26 @@ export async function saveRateItem(draft: RateItemDraft): Promise<void> {
       .eq("id", draft.id);
     if (deErr) throw deErr;
   }
-  const { error } = await supabase.from("rate_items").insert(payload);
+  const { data, error } = await supabase.from("rate_items").insert(payload).select("id").single();
   if (error) throw error;
+
+  if (tiers.length) {
+    await replaceTiers((data as unknown as { id: string }).id, tiers);
+  }
+}
+
+async function fetchTiersForItem(rateItemId: string): Promise<Omit<RateTier, "id">[]> {
+  const { data, error } = await supabase
+    .from("rate_tiers")
+    .select("*")
+    .eq("rate_item_id", rateItemId);
+  if (error) throw error;
+  return ((data ?? []) as unknown as RateTier[]).map((t) => ({
+    rate_item_id: t.rate_item_id,
+    min_qty: Number(t.min_qty),
+    max_qty: t.max_qty === null ? null : Number(t.max_qty),
+    rate: Number(t.rate),
+  }));
 }
 
 export async function setRateItemActive(id: string, active: boolean) {

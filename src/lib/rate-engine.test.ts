@@ -13,6 +13,8 @@ import {
   compareHeights,
   defaultBoardingValue,
   heightLabel,
+  premiumNeedsQuantity,
+  PROJECT_TYPE_VALUES,
   RATE_NOT_CONFIGURED,
   round2,
   selectRateTableForDate,
@@ -171,6 +173,25 @@ describe("boarding", () => {
       true,
     );
   });
+
+  it("reads the height band in the detail line, including a band it does not know", () => {
+    // "up_to_10" is not in HEIGHT_CATEGORIES; the detail must still read as
+    // English rather than echoing the raw code.
+    expect(calculateBoarding(ctx, "low_rise", board({ location: "Ceiling" })).detail).toBe(
+      "Ceiling · Up to and including 10 ft",
+    );
+  });
+
+  it("leaves the height out of the detail when the rate does not price on it", () => {
+    const line = calculateBoarding(ctx, "low_rise", board({ location: "Walls" }));
+    const noHeight = calculateBoarding(
+      ctx,
+      "low_rise",
+      board({ location: "Walls", height_category: null }),
+    );
+    expect(line.detail).toContain("·");
+    expect(noHeight.detail).toBe("Walls");
+  });
 });
 
 describe("tiered rates", () => {
@@ -236,6 +257,37 @@ describe("premiums", () => {
     expect(
       calculatePremium(ctx, "low_rise", { id: "p1", item_code: "MISSING" }, totals).missing,
     ).toBe(true);
+  });
+
+  it("asks for a quantity exactly when the engine does not derive one", () => {
+    // The four types calculatePremium reads off the job itself.
+    expect(premiumNeedsQuantity("percentage")).toBe(false);
+    expect(premiumNeedsQuantity("per_sq_ft")).toBe(false);
+    expect(premiumNeedsQuantity("per_1000_sq_ft")).toBe(false);
+    expect(premiumNeedsQuantity("per_sheet")).toBe(false);
+    // Everything else is rate × quantity, so the builder has to offer one.
+    expect(premiumNeedsQuantity("fixed")).toBe(true);
+    expect(premiumNeedsQuantity("per_unit")).toBe(true);
+    expect(premiumNeedsQuantity("per_item")).toBe(true);
+    expect(premiumNeedsQuantity("per_linear_ft")).toBe(true);
+  });
+
+  it("multiplies a per-item premium by its quantity", () => {
+    const perItem = item({
+      category: "premium",
+      item_code: "ACCESS",
+      item_name: "Access Premium",
+      unit: "item",
+      calculation_type: "per_item",
+      rate: 12.5,
+    });
+    const line = calculatePremium(
+      { ...ctx, items: [...ctx.items, perItem] },
+      "low_rise",
+      { id: "p1", item_code: "ACCESS", quantity: 4 },
+      totals,
+    );
+    expect(line.subtotal).toBe(50);
   });
 });
 
@@ -420,6 +472,13 @@ describe("Local 675 2025–2028 schedule", () => {
       active: true,
     })),
     tiers: [],
+  });
+
+  it("only uses project types the engine can look up", () => {
+    // A seeded row typed outside this list would never match a job and would
+    // price silently at $0 rather than failing.
+    const typed = [...new Set(LOCAL_675_RATES.map((r) => r.project_type))];
+    expect(typed.every((t) => PROJECT_TYPE_VALUES.includes(t))).toBe(true);
   });
 
   it("carries the ceiling-height ladder the agreement actually uses", () => {

@@ -32,6 +32,10 @@ export default tseslint.config(
           ],
         },
       ],
+      // A `let` that is read before its single assignment cannot become a
+      // `const` — the declaration has nowhere to put the initializer. Reporting
+      // it is a false positive (see the `timer` handle in previewAuthStorage).
+      "prefer-const": ["error", { ignoreReadBeforeAssign: true }],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
     },

@@ -239,6 +239,13 @@ export const PROJECT_TYPES: {
   },
 ];
 
+/**
+ * Every project type the engine prices. Rates are looked up by an exact
+ * `project_type` match, so this is the source of truth for import validation
+ * too — a value outside this list can never match a job.
+ */
+export const PROJECT_TYPE_VALUES: string[] = PROJECT_TYPES.map((p) => p.value);
+
 export function labelFor(list: { value: string; label: string }[], value?: string | null) {
   return list.find((l) => l.value === value)?.label ?? value ?? "—";
 }
@@ -504,7 +511,10 @@ export function calculateBoarding(
       .trim() ||
     item?.item_name ||
     "Boarding";
-  const detail = [b.location, labelFor(HEIGHT_CATEGORIES, b.height_category)]
+  // heightLabel, not labelFor: it reads the feet out of a band this build has
+  // never heard of instead of printing a raw code, and it stays out of the
+  // detail line entirely when the rate does not price on height.
+  const detail = [b.location, b.height_category ? heightLabel(b.height_category) : ""]
     .filter(Boolean)
     .join(" · ");
 
@@ -626,6 +636,19 @@ export function calculateExtra(ctx: EngineContext, projectType: string, e: Extra
 }
 
 /* --------------------------------------------------------------- premiums */
+
+/**
+ * Premium calculation types whose quantity calculatePremium derives from the
+ * job itself — the boarding total, the square footage or the sheet count. Every
+ * other type multiplies its rate by a quantity the user enters, so the job
+ * builder has to offer a quantity control for those; keep this in step with the
+ * switch in calculatePremium below.
+ */
+const PREMIUM_DERIVED_QTY = new Set(["percentage", "per_sq_ft", "per_1000_sq_ft", "per_sheet"]);
+
+/** True when a premium of this calculation type needs a user-entered quantity. */
+export const premiumNeedsQuantity = (calculationType: string) =>
+  !PREMIUM_DERIVED_QTY.has(calculationType);
 
 export interface PremiumContext {
   baseTotal: number;

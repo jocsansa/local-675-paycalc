@@ -1,4 +1,9 @@
-import { CALCULATION_TYPES, RATE_ITEM_CATEGORIES, type RateItem } from "./rate-engine";
+import {
+  CALCULATION_TYPES,
+  PROJECT_TYPE_VALUES,
+  RATE_ITEM_CATEGORIES,
+  type RateItem,
+} from "./rate-engine";
 
 /**
  * Rate table CSV interchange. Column order is the spreadsheet order used by the
@@ -70,7 +75,10 @@ export function parseCsv(text: string): string[][] {
         } else {
           quoted = false;
         }
-      } else {
+      } else if (ch !== "\r" || src[i + 1] !== "\n") {
+        // A CRLF inside a quoted cell — how Excel writes an embedded line break
+        // in a notes column — collapses to a plain "\n", so the imported value
+        // never carries a stray carriage return.
         cell += ch;
       }
       continue;
@@ -156,6 +164,16 @@ export function csvToRateItems(text: string, rateTableId: string): CsvImportResu
       );
       continue;
     }
+    // Same reasoning as the category check: findItem and findBoardingRate match
+    // project_type exactly, so a row typed "lowrise" would never be found and
+    // every line priced against it would quietly read RATE NOT CONFIGURED.
+    const projectType = at(row, "project_type");
+    if (!PROJECT_TYPE_VALUES.includes(projectType)) {
+      errors.push(
+        `Line ${line}: project_type "${projectType}" is not one of ${PROJECT_TYPE_VALUES.join(", ")} — row skipped.`,
+      );
+      continue;
+    }
     const calculationType = at(row, "calculation_type") || "per_unit";
     if (!CALCULATION_TYPES.includes(calculationType as (typeof CALCULATION_TYPES)[number])) {
       errors.push(
@@ -169,7 +187,7 @@ export function csvToRateItems(text: string, rateTableId: string): CsvImportResu
 
     out.push({
       rate_table_id: rateTableId,
-      project_type: at(row, "project_type"),
+      project_type: projectType,
       category,
       item_code: itemCode,
       item_name: at(row, "item_name") || itemCode,

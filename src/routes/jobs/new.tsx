@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Loader2, Plus, Save, Trash2, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
@@ -34,6 +34,7 @@ import {
   heightLabel,
   labelFor,
   money,
+  premiumNeedsQuantity,
   PROJECT_TYPES,
   selectRateTableForDate,
   type BoardingDimensions,
@@ -57,6 +58,13 @@ const makeId = () =>
     : `tmp-${Math.random().toString(36).slice(2)}`;
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** Sheet dimensions multiply straight into the priced square footage, so a
+ * negative or unparseable entry has to become 0 rather than reach the engine. */
+const positive = (raw: string) => {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
 
 function emptyDraft(): JobDraft {
   return {
@@ -98,50 +106,38 @@ function JobBuilder() {
   const rateTables = useRateTables();
   const loaded = useJobDraft(editId ?? copyId ?? null);
 
-  // Hydrate from an existing job (edit) or clone it (duplicate).
+  // Hydrate from an existing job (edit) or clone it (duplicate). This runs once
+  // per source job: react-query hands back a fresh object on every background
+  // refetch (window focus, reconnect), and re-seeding the form from it would
+  // throw away everything the user had typed since.
+  const hydratedFrom = useRef<string | null>(null);
   useEffect(() => {
     const source = loaded.data;
-    if (!source) return;
-    if (editId) {
-      setDraft(source);
-    } else {
-      // A duplicate starts as a brand new job: drop the id so it saves as its own row.
-      const { id: _originalId, ...rest } = source;
-      setDraft({
-        ...rest,
-        name: `${source.name} (copy)`,
-        job_date: today(),
-        areas: source.areas.map((a) => ({ ...a, id: makeId() })),
-      });
-      setTableOverridden(false);
-    }
-  }, [loaded.data, editId]);
+    const sourceId = editId ?? copyId ?? null;
+    if (!source || !sourceId || hydratedFrom.current === sourceId) return;
+    hydratedFrom.current = sourceId;
 
-  // Fix the id-remap for a duplicate: boarding/extras still point at old area ids.
-  useEffect(() => {
-    if (!copyId || !loaded.data) return;
-    setDraft((d) => {
-      const map = new Map<string, string>();
-      loaded.data.areas.forEach((a, i) => {
-        const cloned = d.areas[i];
-        if (cloned) map.set(a.id, cloned.id);
-      });
-      return {
-        ...d,
-        boarding: d.boarding.map((b) => ({
-          ...b,
-          id: makeId(),
-          area_id: b.area_id ? (map.get(b.area_id) ?? null) : null,
-        })),
-        extras: d.extras.map((e) => ({
-          ...e,
-          id: makeId(),
-          area_id: e.area_id ? (map.get(e.area_id) ?? null) : null,
-        })),
-        premiums: d.premiums.map((p) => ({ ...p, id: makeId() })),
-      };
+    if (editId) {
+      setDraft({ ...source });
+      return;
+    }
+    // A duplicate starts as a brand new job: drop the id so it saves as its own
+    // row, and re-key the areas together with every line that points at one, so
+    // nothing in the copy still references the original job's rows.
+    const { id: _originalId, ...rest } = source;
+    const areaIds = new Map(source.areas.map((a) => [a.id, makeId()]));
+    const remap = (areaId: string | null) => (areaId ? (areaIds.get(areaId) ?? null) : null);
+    setDraft({
+      ...rest,
+      name: `${source.name} (copy)`,
+      job_date: today(),
+      areas: source.areas.map((a) => ({ ...a, id: areaIds.get(a.id) ?? makeId() })),
+      boarding: source.boarding.map((b) => ({ ...b, id: makeId(), area_id: remap(b.area_id) })),
+      extras: source.extras.map((e) => ({ ...e, id: makeId(), area_id: remap(e.area_id) })),
+      premiums: source.premiums.map((p) => ({ ...p, id: makeId() })),
     });
-  }, [copyId, loaded.data]);
+    setTableOverridden(false);
+  }, [loaded.data, editId, copyId]);
 
   const agreementTables = useMemo(
     () => (rateTables.data ?? []).filter((t) => t.agreement_id === draft.agreement_id),
@@ -812,8 +808,9 @@ function BoardingStep({
                       className="numeric h-11"
                       type="number"
                       inputMode="decimal"
+                      min={0}
                       value={b.sheet_width}
-                      onChange={(e) => update(b.id, { sheet_width: Number(e.target.value) })}
+                      onChange={(e) => update(b.id, { sheet_width: positive(e.target.value) })}
                     />
                   </div>
                   <div className="w-24 space-y-1">
@@ -822,8 +819,9 @@ function BoardingStep({
                       className="numeric h-11"
                       type="number"
                       inputMode="decimal"
+                      min={0}
                       value={b.sheet_height}
-                      onChange={(e) => update(b.id, { sheet_height: Number(e.target.value) })}
+                      onChange={(e) => update(b.id, { sheet_height: positive(e.target.value) })}
                     />
                   </div>
                 </>
@@ -1007,7 +1005,10 @@ function PremiumsStep({
       <ul className="space-y-2">
         {items.map((i) => {
           const selected = draft.premiums.find((p) => p.item_code === i.code);
-          const needsQty = i.calculation_type === "fixed" || i.calculation_type === "per_unit";
+          // Anything the engine does not derive from the job totals is priced
+          // as rate × quantity, so it needs a quantity control — a per_item or
+          // per_linear_ft premium was previously stuck at 1.
+          const needsQty = premiumNeedsQuantity(i.calculation_type);
           return (
             <li key={i.code} className="panel flex flex-wrap items-center gap-3 p-4">
               <Checkbox
